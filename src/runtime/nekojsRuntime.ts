@@ -128,9 +128,9 @@ export class Neko implements NekoInstance {
   /** Modes visited in order on each pet mousedown when behavior change is allowed. */
   behaviorCycle!: readonly BehaviorMode[];
 
-  /** Spawn / home top-left from `createNeko`; used by return-home behavior (mode 6). */
-  readonly homeX: number;
-  readonly homeY: number;
+  /** Spawn / home top-left from `createNeko`; used by return-home behavior (mode 6). Clamped on resize. */
+  homeX: number;
+  homeY: number;
 
   /**
    * @param options - Initial behavior and layout; see {@link NekoOptions}. Empty object uses defaults.
@@ -176,8 +176,8 @@ export class Neko implements NekoInstance {
     this.moveDY = 0;
 
     // Bounds - clientWidth excludes scrollbar, innerHeight is viewport height
-    this.boundsWidth = document.documentElement.clientWidth - SPRITE_SIZE;
-    this.boundsHeight = window.innerHeight - SPRITE_SIZE;
+    this.boundsWidth = Math.max(0, document.documentElement.clientWidth - SPRITE_SIZE);
+    this.boundsHeight = Math.max(0, window.innerHeight - SPRITE_SIZE);
 
     // Mouse tracking - null until first mouse event
     // This prevents neko from running somewhere before user moves mouse
@@ -223,6 +223,46 @@ export class Neko implements NekoInstance {
     this.ballVY = 0;
 
     this.init();
+  }
+
+  /**
+   * Keeps the sprite, home, chase targets, and ball inside the viewport after `innerWidth` /
+   * `innerHeight` change. Without this, a still pet (or `stop()`ped `rest` mode) can remain off-screen
+   * with no ticks to clamp position.
+   */
+  private clampLayoutToViewport(): void {
+    const bw = Math.max(0, document.documentElement.clientWidth - SPRITE_SIZE);
+    const bh = Math.max(0, window.innerHeight - SPRITE_SIZE);
+    this.boundsWidth = bw;
+    this.boundsHeight = bh;
+
+    const clamp = (v: number, max: number): number =>
+      max <= 0 ? 0 : Math.max(0, Math.min(max, v));
+
+    this.homeX = clamp(this.homeX, bw);
+    this.homeY = clamp(this.homeY, bh);
+
+    this.logicX = clamp(this.logicX, bw);
+    this.logicY = clamp(this.logicY, bh);
+    this.prevLogicX = this.logicX;
+    this.prevLogicY = this.logicY;
+    this.x = this.logicX;
+    this.y = this.logicY;
+    this.tickAccumulator = 0;
+
+    const footX = this.logicX + SPRITE_SIZE / 2;
+    const footY = this.logicY + SPRITE_SIZE - 1;
+    this.targetX = footX;
+    this.targetY = footY;
+    this.oldTargetX = footX;
+    this.oldTargetY = footY;
+
+    if (!(this.ballX === 0 && this.ballY === 0)) {
+      this.ballX = clamp(this.ballX, bw);
+      this.ballY = clamp(this.ballY, bh);
+    }
+
+    this.updatePosition();
   }
 
   private init(): void {
@@ -301,15 +341,8 @@ export class Neko implements NekoInstance {
       { signal },
     );
 
-    // Update bounds on resize
-    window.addEventListener(
-      "resize",
-      () => {
-        this.boundsWidth = document.documentElement.clientWidth - SPRITE_SIZE;
-        this.boundsHeight = window.innerHeight - SPRITE_SIZE;
-      },
-      { signal },
-    );
+    // Update bounds on resize and clamp layout so the sprite stays reachable (incl. when `stop()`ped).
+    window.addEventListener("resize", () => this.clampLayoutToViewport(), { signal });
 
     // Keep constructor `startX` / `startY` (placement / corners / anchor). Do not randomize — callers
     // rely on resolved coordinates; random spawn would ignore `createNeko` options.

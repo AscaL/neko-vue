@@ -533,7 +533,7 @@ const hudLines = computed((): LiveStatLine[] => [
             <label class="field">
               <span><code>allowBehaviorChange</code></span>
               <select v-model="draft.allowBehavior">
-                <option value="omit">Omit — engine default (<code>true</code>)</option>
+                <option value="omit">Omit — engine default (true)</option>
                 <option value="on">true — clicks cycle modes</option>
                 <option value="off">false — clicks do not cycle</option>
               </select>

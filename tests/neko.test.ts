@@ -6,7 +6,17 @@ import { cornerToStartXY } from "../src/placement/nekoPlacement.ts";
 import NekoPet from "../src/vue/NekoPet.ts";
 import { prefersReducedMotion } from "../src/utils/prefersReducedMotion.ts";
 import { BehaviorMode } from "../src/types/index.ts";
+import { createNeko } from "../src/runtime/nekojsRuntime.ts";
 import { useNeko } from "../src/vue/useNeko.ts";
+
+type NekoWithLayout = {
+  x: number;
+  y: number;
+  homeX: number;
+  homeY: number;
+  destroy(): void;
+  stop(): void;
+};
 
 /** Vitest infers `mock.calls` as empty tuples; cast after asserting the mock ran. */
 type CreateNekoCallArgs = [options: Record<string, unknown>];
@@ -422,6 +432,41 @@ describe("NekoPet", () => {
     expect(calls[0]).toBeDefined();
     const opts = calls[0]![0];
     expect(opts).not.toHaveProperty("allowBehaviorChange");
+  });
+});
+
+describe("Neko resize", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("clamps position and home into the new viewport when the window shrinks", () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    vi.stubGlobal("innerHeight", 600);
+
+    const neko = createNeko({
+      startX: 980,
+      startY: 550,
+      behaviorMode: BehaviorMode.StayStill,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 200,
+    });
+    vi.stubGlobal("innerHeight", 400);
+    window.dispatchEvent(new Event("resize"));
+
+    expect(neko.x).toBe(168);
+    expect(neko.y).toBe(368);
+    expect(neko.homeX).toBe(168);
+    expect(neko.homeY).toBe(368);
+
+    neko.destroy();
   });
 });
 
