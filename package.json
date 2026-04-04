@@ -1,6 +1,6 @@
 {
   "name": "neko-vue",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Vue 3 desktop pet — typed runtime, composable, and NekoPet component.",
   "keywords": [
     "composable",
