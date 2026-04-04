@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import {
+  BEHAVIOR_MODES_IN_ORDER,
+  BEHAVIOR_MODE_LABELS,
   BehaviorMode,
   DEFAULT_NEKO_BEHAVIOR_CYCLE,
+  formatBehaviorMode,
+  isBehaviorMode,
   useNeko,
   type NekoStartCorner,
   type UseNekoOptions,
@@ -47,18 +51,15 @@ const CORNERS: { value: NekoStartCorner; label: string }[] = [
   { value: "bottom-right", label: "Bottom right" },
 ];
 
-const BEHAVIORS: { value: BehaviorMode; label: string }[] = [
-  { value: BehaviorMode.ChaseMouse, label: "Chase pointer" },
-  { value: BehaviorMode.RunAwayFromMouse, label: "Run away" },
-  { value: BehaviorMode.RunAroundRandomly, label: "Random wander" },
-  { value: BehaviorMode.PaceAroundScreen, label: "Pace edges" },
-  { value: BehaviorMode.BallChase, label: "Ball chase" },
-  { value: BehaviorMode.StayStill, label: "Stay still" },
-  { value: BehaviorMode.ReturnHomeAndStay, label: "Return home & stay" },
-];
+const BEHAVIORS: { value: BehaviorMode; label: string }[] = BEHAVIOR_MODES_IN_ORDER.map(
+  (value) => ({
+    value,
+    label: BEHAVIOR_MODE_LABELS[value],
+  }),
+);
 
 function labelForBehavior(m: BehaviorMode): string {
-  return BEHAVIORS.find((b) => b.value === m)?.label ?? String(m);
+  return BEHAVIOR_MODE_LABELS[m];
 }
 
 function moveCycleUp(index: number): void {
@@ -96,10 +97,10 @@ function appendCycleStep(): void {
     return;
   }
   const n = typeof raw === "number" ? raw : Number.parseInt(String(raw), 10);
-  if (!Number.isInteger(n) || n < 0 || n > 6) {
+  if (!isBehaviorMode(n)) {
     return;
   }
-  draft.behaviorCycle.push(n as BehaviorMode);
+  draft.behaviorCycle.push(n);
   addCycleValue.value = "";
 }
 
@@ -258,7 +259,7 @@ function behaviorCycleLine(state: FormState): string {
   if (!state.behaviorCycleCustom || state.behaviorCycle.length === 0) {
     return "default (7-step, omitted in payload)";
   }
-  return state.behaviorCycle.map((m) => `${labelForBehavior(m)} (${m})`).join(" → ");
+  return state.behaviorCycle.map((m) => formatBehaviorMode(m)).join(" → ");
 }
 
 /** Rows reflecting the last-applied form → `useNeko` payload (static until Apply). */
@@ -277,7 +278,7 @@ function appliedOptionRows(state: FormState): LiveStatLine[] {
     },
     {
       label: "behaviorMode (initial)",
-      value: `${labelForBehavior(state.behaviorMode)} (${state.behaviorMode})`,
+      value: formatBehaviorMode(state.behaviorMode),
     },
     { label: "allowBehaviorChange", value: effectiveAllowBehaviorLine(state) },
     { label: "idleThreshold", value: effectiveIdleLine(state) },

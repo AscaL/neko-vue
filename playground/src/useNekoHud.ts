@@ -1,22 +1,6 @@
 import type { NekoInstance } from "../../src/types/index";
-import { BehaviorMode } from "../../src/types/index";
+import { formatBehaviorMode } from "../../src/types/index";
 import { onMounted, onUnmounted, ref } from "vue";
-
-const BEHAVIOR_LABELS: Record<BehaviorMode, string> = {
-  [BehaviorMode.ChaseMouse]: "Chase pointer",
-  [BehaviorMode.RunAwayFromMouse]: "Run away",
-  [BehaviorMode.RunAroundRandomly]: "Random wander",
-  [BehaviorMode.PaceAroundScreen]: "Pace edges",
-  [BehaviorMode.BallChase]: "Ball chase",
-  [BehaviorMode.StayStill]: "Stay still",
-  [BehaviorMode.ReturnHomeAndStay]: "Return home & stay",
-};
-
-function formatBehavior(mode: number | undefined): string {
-  if (mode === undefined) return "—";
-  const label = BEHAVIOR_LABELS[mode as BehaviorMode];
-  return label ? `${label} (${mode})` : `Unknown (${mode})`;
-}
 
 /**
  * Live readout for playground demos: polls the engine instance each animation frame.
@@ -39,7 +23,7 @@ export function useNekoHud(getInstance: () => NekoInstance | null | undefined) {
       hudStartPosition.value = "—";
       hudPosition.value = "—";
     } else {
-      hudBehavior.value = formatBehavior(inst.behaviorMode);
+      hudBehavior.value = formatBehaviorMode(inst.behaviorMode);
       const hx = inst.homeX;
       const hy = inst.homeY;
       hudStartPosition.value =
