@@ -45,7 +45,7 @@ Routing: [`playground/src/router.ts`](./playground/src/router.ts). Shell UI: [`p
 - **Per axis:** explicit coord → anchor top-left → corner → `0`. **`0`** is valid. Corner math uses **`NEKOJS_SPRITE_SIZE` (32)**.
 - **Anchor gate:** `createNeko` waits until the element exists and has **non-zero** size. **`ResizeObserver`** runs in **`useNeko`** only when **`anchorRef`** is set—not for **`anchorSelector`** alone.
 - **`mode`:** **`follow`** (loop on) vs **`rest`** (stop at resolved home after create). Imperative: **`setMode`**, **`restAtOrigin`**, **`resumeFollow`**, or reactive **`mode`** in options. Changing placement-related options **recreates** the instance (no teleport API).
-- **`behaviorMode`:** **Initial** create (+ special cases leaving the first-click gate); **live** mode advances by **clicking the cat** (if **`allowBehaviorChange`**). On recreate, the **previous engine mode** is kept unless leaving that gate (`applyBehaviorModeForRecreate` in [`src/vue/useNeko.ts`](./src/vue/useNeko.ts)). Enum: **`BehaviorMode`** / cycle **`DEFAULT_NEKO_BEHAVIOR_CYCLE`** in [`src/types/index.ts`](./src/types/index.ts). Custom order: **`behaviorCycle`**; invalid entries dropped in runtime.
+- **`behaviorMode`:** **Initial** create (+ special cases leaving the first-click gate); **live** mode advances by **clicking the cat** (if **`allowBehaviorChange`**). On recreate, the **previous engine mode** is kept unless leaving that gate (`applyBehaviorModeForRecreate` in [`src/vue/useNeko.ts`](./src/vue/useNeko.ts)). Enum **`BehaviorMode`** (ids **0…6** in the engine), **`BEHAVIOR_MODES_IN_ORDER`**, **`DEFAULT_NEKO_BEHAVIOR_CYCLE`**, **`BehaviorCycle`**, **`isBehaviorMode`** — [`src/types/index.ts`](./src/types/index.ts). **Readable strings (HUD / logs / hovers):** **`formatBehaviorMode`**, **`behaviorModeEnumName`**, **`BEHAVIOR_MODE_LABELS`**. **Stable cycle typing** (avoid inferred `0 \| 2 \| 1` unions): **`behaviorCycleOf(BehaviorMode.ChaseMouse, …)`**. **`NekoPet`** is cast to **`DefineComponent<NekoPetPublicProps>`** so Volar shows **`BehaviorMode`** on props, not plain `number`. Custom click order: **`behaviorCycle`**; invalid ids stripped in [`normalizeBehaviorCycle`](./src/runtime/nekojsRuntime.ts).
 - **`allowBehaviorChange`:** On `NekoPet`, default **`undefined`** so the field is omitted and the engine default **`true`** applies (see props table below).
 - **`restUntilFirstPetInteraction`:** First pointer-down wakes **`follow`** without consuming the first cycle step; then normal cycle. **`petInteractionAwake`** tracks this.
 - **Reduced motion:** Default **skip** load + create; **`skippedForReducedMotion`**. Opt out: **`respectReducedMotion: false`** (use with care). Helper: **`prefersReducedMotion()`** ([`src/utils/prefersReducedMotion.ts`](./src/utils/prefersReducedMotion.ts)).
@@ -102,10 +102,10 @@ Routing: [`playground/src/router.ts`](./playground/src/router.ts). Shell UI: [`p
 | Import | Exposes |
 | ------ | ------- |
 | `neko-vue` | Full API ([`src/index.ts`](./src/index.ts)) |
-| `neko-vue/types` | `NekoOptions`, `NekoInstance`, `CreateNekoFn`, `BehaviorMode`, `BehaviorModes`, `DEFAULT_NEKO_BEHAVIOR_CYCLE`, `NEKOJS_SPRITE_SIZE`, `LoadNekoRuntimeOptions` — no Vue |
+| `neko-vue/types` | Same as root type exports: behavior helpers **`formatBehaviorMode`**, **`behaviorModeEnumName`**, **`BEHAVIOR_MODE_LABELS`**, **`behaviorCycleOf`**, plus `BehaviorMode`, `BehaviorCycle`, etc. — no Vue |
 | `neko-vue/placement` | `cornerToStartXY`, `resolveStartPosition`, corners / input types |
 | `neko-vue/runtime` | `loadNekoRuntime` only |
-| `neko-vue/vue` | `useNeko`, `NekoPet`, option types |
+| `neko-vue/vue` | `useNeko`, `NekoPet`, **`NekoPetPublicProps`** (typed props for Volar), option types |
 
 ---
 
