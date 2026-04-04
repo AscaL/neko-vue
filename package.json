@@ -67,13 +67,17 @@
     "check": "vp check src tests vite.config.ts",
     "check:playground": "vp check playground/src playground/vite.config.ts",
     "check:all": "vp check src tests vite.config.ts && vp check playground/src playground/vite.config.ts",
-    "prepublishOnly": "vp run build"
+    "prepublishOnly": "vp run build",
+    "release": "commit-and-tag-version"
   },
   "devDependencies": {
+    "@commitlint/cli": "^20.5.0",
+    "@commitlint/config-conventional": "^20.5.0",
     "@types/node": "^25.5.2",
     "@typescript/native-preview": "7.0.0-dev.20260404.1",
     "@vue/test-utils": "^2.4.6",
     "bumpp": "^11.0.1",
+    "commit-and-tag-version": "^12.7.1",
     "happy-dom": "^20.8.9",
     "typescript": "^6.0.2",
     "vite-plus": "^0.1.15",

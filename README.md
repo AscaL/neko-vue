@@ -2,7 +2,7 @@
 
 Vue 3 helpers for a classic viewport-fixed desktop pet: typed options, `loadNekoRuntime()`, `useNeko()`, and `NekoPet`. The default path uses programmatic `createNeko` only (no `data-autostart`).
 
-The pet **engine always comes from this package** (a dynamically imported chunk in `dist/`). There is **no** supported option to load `createNeko` from a remote URL or a separate script tag—only the bundled runtime, unless you assign **`window.createNeko`** yourself first (advanced / tests).
+The pet **engine always comes from this package** (a dynamically imported chunk in `dist/`). There is **no** supported option to load `createNeko` from a remote URL or a separate script tag—only the bundled runtime, unless you assign **`globalThis.createNeko`** yourself first (in browsers usually **`window.createNeko`**; advanced / tests).
 
 **Peer dependency:** `vue` ^3.4 or ^3.5.
 
@@ -12,19 +12,19 @@ The pet **engine always comes from this package** (a dynamically imported chunk 
 
 | Capability              | Details                                                                                                                                                                                                                                             |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Typed engine API**    | `NekoOptions`, `NekoInstance`, `BehaviorMode`, `DEFAULT_NEKO_BEHAVIOR_CYCLE`, `BehaviorModes`, `NEKOJS_SPRITE_SIZE` — aligned with `createNeko`.                                                                                                    |
-| **Bundled runtime**     | Typed engine ships in **`dist/`** (code-split chunk); **only** dynamic import from the package—no remote URL or `<script src>` loader.                                                                                                              |
-| **`<NekoPet />`**       | Declarative component: speed, corner, anchor, mode (`follow` / `rest`), optional **`behavior-cycle`**, optional chase **`cursor-standoff-px`**, reduced motion, debug.                                                                              |
-| **`useNeko()`**         | Same options as **`NekoPet`** (plus **`anchorRef`**): reactive **`instance` / `isReady` / `error`**, **`setMode`**, **`destroy`**, **`restUntilFirstPetInteraction`**, **`petInteractionAwake`**, **`behaviorCycle`**, **`cursorStandoffPx`**, etc. |
-| **`loadNekoRuntime()`** | Advanced: `Promise<createNeko>` after bundled import, or reuse **`window.createNeko`** if already set; shared in-memory promise; SSR-safe error when misused.                                                                                       |
-| **Placement helpers**   | `startCorner`, `cornerToStartXY`, `resolveStartPosition` — viewport corners + anchor rects, `ResizeObserver` when anchored.                                                                                                                         |
+| **Typed engine API**    | `NekoOptions`, `NekoInstance`, `BehaviorMode`, `BehaviorModes`, `DEFAULT_NEKO_BEHAVIOR_CYCLE`, `NEKOJS_SPRITE_SIZE` — aligned with **`createNeko`**.                                                                                                |
+| **Bundled runtime**     | Engine lives in **`dist/`** as a separate chunk; your bundler loads it via **dynamic `import`** (no extra HTTP URL in this API). Same chunk **`loadNekoRuntime()`** / **`useNeko`** pull in.                                                         |
+| **`<NekoPet />`**       | Declarative wrapper: placement (**`start-corner`**, **`anchor-selector`**), **`mode`** (`follow` / `rest`), engine tuning (**`speed`**, **`fps`**, **`behavior-mode`**, **`behavior-cycle`**, **`cursor-standoff-px`**, …), motion gate, **`debug`**. |
+| **`useNeko()`**         | Same options as **`NekoPet`** plus **`anchorRef`**; returns **`instance`**, **`isReady`**, **`error`**, **`skippedForReducedMotion`**, **`mode`**, **`petInteractionAwake`**, **`setMode`**, **`destroy`**, etc. Calls **`loadNekoRuntime()`** internally. |
+| **`loadNekoRuntime()`** | Returns **`Promise<CreateNekoFn>`** — the typed **`createNeko`** factory. **Browser:** if **`globalThis.createNeko`** already exists (tests / custom setup), resolves to that; else **one shared promise** dynamic-imports the bundled runtime once. **Not in browser (e.g. SSR):** rejects immediately with a clear error (do not call on the server). |
+| **Placement helpers**   | **`NekoStartCorner`**, **`NekoPlacementInput`**, **`cornerToStartXY`**, **`resolveStartPosition`** — corner / anchor → **`startX`** / **`startY`**. In **`useNeko`**, a **`ResizeObserver`** is attached only when **`anchorRef`** is set (not for **`anchorSelector`** alone). |
 | **Motion & a11y**       | `prefersReducedMotion()`; composable and component skip the pet when user prefers reduced motion (with opt-out on `NekoPet`).                                                                                                                       |
 | **Lifecycle**           | Unmount → `stop()` + `destroy()`; bundled runtime removes listeners via **`AbortController`**.                                                                                                                                                      |
 | **Debug**               | `nekoVueDebug()` for optional placement / recreate logging.                                                                                                                                                                                         |
 
 ## Source layout (this repo)
 
-Library code under **`src/`** is grouped by role (public API remains **`neko-vue`** → `dist/index.mjs` only):
+Library code under **`src/`** is grouped by role. **`vite.config.ts`** **`pack.entry`** maps **`src/index.ts`** plus **`src/entries/*.ts`** to published **`dist/*.mjs`**; **`pack.exports: false`** leaves **`package.json` `exports`** as the source of truth (see [Subpath imports](#subpath-imports)).
 
 | Folder               | Role                                                                                                                                                   |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -33,7 +33,8 @@ Library code under **`src/`** is grouped by role (public API remains **`neko-vue
 | **`src/vue/`**       | `useNeko.ts`, `NekoPet.ts` (`defineComponent`, not an SFC).                                                                                            |
 | **`src/placement/`** | Corner / anchor → `startX` / `startY` resolution.                                                                                                      |
 | **`src/utils/`**     | `prefersReducedMotion`, `nekoVueDebug`.                                                                                                                |
-| **`src/index.ts`**   | Public re-exports only.                                                                                                                                |
+| **`src/entries/`**   | Thin barrels for **`neko-vue/types`**, **`/placement`**, **`/runtime`**, **`/vue`** (see **`vite.config.ts`** **`pack.entry`**).                         |
+| **`src/index.ts`**   | Root public re-exports (full API).                                                                                                                     |
 | **`src/env.d.ts`**   | Vite / client typings.                                                                                                                                 |
 
 ## Install
@@ -61,7 +62,7 @@ Besides the root entry (`neko-vue`), published builds expose **conditional expor
 | **`neko-vue`**           | Full public API (root barrel).                                                                                                                                                     |
 | **`neko-vue/types`**     | `BehaviorMode`, `BehaviorModes`, `DEFAULT_NEKO_BEHAVIOR_CYCLE`, `NEKOJS_SPRITE_SIZE`, `NekoOptions`, `NekoInstance`, `CreateNekoFn`, `LoadNekoRuntimeOptions` — no Vue, no loader. |
 | **`neko-vue/placement`** | `cornerToStartXY`, `resolveStartPosition`, `NekoStartCorner`, `NekoPlacementInput` — no Vue.                                                                                       |
-| **`neko-vue/runtime`**   | `loadNekoRuntime` only (pulls the bundled engine chunk when called).                                                                                                               |
+| **`neko-vue/runtime`**   | `loadNekoRuntime` only — pulls the bundled engine chunk when called.                                                                                                               |
 | **`neko-vue/vue`**       | `useNeko`, `NekoPet`, `UseNekoOptions`, `NekoFollowMode` — **requires Vue**; still loads the engine when you create a pet.                                                         |
 
 Your bundler decides how much code stays in the bundle; these subpaths make dependencies explicit and avoid importing the root barrel when you only need types or placement helpers.
@@ -136,7 +137,7 @@ If the user prefers reduced motion, **`NekoPet`** and **`useNeko`** **skip** loa
 
 ### 7. SSR (Nuxt, custom SSR)
 
-Never call **`useNeko`**, render **`NekoPet`**, or **`loadNekoRuntime`** on the server. Use a **`.client.vue`** component or **`<ClientOnly>`** (see [Nuxt 3](#4-nuxt-3) below).
+Never call **`useNeko`**, render **`NekoPet`**, or **`loadNekoRuntime`** on the server. Use a **`.client.vue`** component or **`<ClientOnly>`** (see [Nuxt 4](#4-nuxt-4) below).
 
 ### 8. When something looks wrong
 
@@ -169,13 +170,13 @@ TypeScript picks up types from the published `dist` typings; no extra `@types` p
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`<NekoPet />`**       | You want declarative props (`speed`, `start-corner`, `mode`, …) and minimal setup code.                                                                 |
 | **`useNeko()`**         | You need a **handle** (`setMode`, `destroy`, refs to `instance` / `isReady` / `error`) or **`anchorRef`** to tie the start position to another element. |
-| **`loadNekoRuntime()`** | Advanced: ensure a typed `createNeko` after the bundled runtime is loaded, or reuse an existing **`window.createNeko`** (e.g. tests).                   |
+| **`loadNekoRuntime()`** | Advanced: ensure a typed **`createNeko`** after the bundled runtime is loaded, or reuse an existing **`globalThis.createNeko`** (e.g. tests).            |
 
-By default, **`loadNekoRuntime()`** loads the **bundled** engine (dynamic import, no extra network hop for the pet). If **`window.createNeko`** is already a function when the loader runs, that implementation is used instead (typical in **tests** or custom setups).
+By default, **`loadNekoRuntime()`** loads the **bundled** engine (dynamic import, no extra network hop for the pet). If **`globalThis.createNeko`** is already a function when the loader runs, that implementation is used instead (typical in **tests** or custom setups).
 
 ### 3. Vite, Vue CLI, or a plain SPA
 
-1. Install `neko-vue` and `vue`.
+1. Install **`neko-vue`** (and **`vue`** if the project does not already depend on it).
 2. Use **`NekoPet`** in any component that only runs on the client (typical SPA entry is client-only already):
 
 ```vue
@@ -190,13 +191,17 @@ import { NekoPet } from "neko-vue";
 
 3. If you prefer the composable, call **`useNeko()` inside `setup()`** (or `<script setup>`) — see the [Composable](#composable) section.
 
-### 4. Nuxt 3
+### 4. Nuxt 4
 
-1. Install: `npx nuxi module add` is not required — add **`neko-vue`** (and ensure **`vue`** is present) with your package manager.
+These notes match **[Nuxt 4](https://nuxt.com/)** (Vue 3). The pet is **browser-only**; keep it off the server render path.
 
-2. Wrap usage so it **never runs on the server**:
-   - Put the pet in a **`.client.vue`** component, or
-   - Wrap with [`<ClientOnly>`](https://nuxt.com/docs/api/components/client-only).
+1. **Install:** add **`neko-vue`** with your package manager (`npm install neko-vue`, `pnpm add neko-vue`, …). You do **not** need a Nuxt module for this library. Nuxt already depends on **Vue 3**.
+
+2. **Client-only rendering** (pick one):
+   - Put the pet in a component named **`*.client.vue`** under **`components/`**, or
+   - Wrap it with **[`<ClientOnly>`](https://nuxt.com/docs/4.x/api/components/client-only)**.
+
+For **`.client.vue`**, Nuxt only treats the file as client-only when you use **[auto-imports](https://nuxt.com/docs/4.x/guide/directory-structure/components#client-components)** or import from **`#components`**. Importing the file by **filesystem path** (e.g. `~/components/Foo.client.vue`) does **not** apply the client-only transform—use **`import { NekoPetClient } from '#components'`** or drop the import and use the auto-registered name.
 
 ```vue
 <!-- components/NekoPetClient.client.vue -->
@@ -210,9 +215,9 @@ import { NekoPet } from "neko-vue";
 ```
 
 ```vue
-<!-- pages/index.vue — import path matches your Nuxt srcDir -->
+<!-- e.g. app/pages/index.vue (Nuxt 4 default `app/` layout) or pages/index.vue if you use a classic root `pages/` dir -->
 <script setup lang="ts">
-import NekoPetClient from "~/components/NekoPetClient.client.vue";
+import { NekoPetClient } from "#components";
 </script>
 
 <template>
@@ -224,7 +229,7 @@ import NekoPetClient from "~/components/NekoPetClient.client.vue";
 </template>
 ```
 
-If you rely on **Nuxt component auto-import**, you can omit the import and keep the file as `components/NekoPetClient.client.vue`.
+Alternatively, omit the script import and use **`<NekoPetClient />`** if the file **`components/NekoPetClient.client.vue`** is picked up by Nuxt’s component scanner.
 
 ### 5. Global registration (optional)
 
@@ -284,7 +289,30 @@ import { BehaviorMode, NekoPet } from "neko-vue";
 </template>
 ```
 
-`NekoPet` is implemented as `defineComponent` (TypeScript) for reliable library builds; use it like any other Vue component. It **exposes** `{ instance }` (a ref to **`NekoInstance | null`**), so a template **`ref`** on **`NekoPet`** gives you the same live handle as **`useNeko()`’s `instance`**.
+`NekoPet` is implemented as `defineComponent` (TypeScript) for reliable library builds; use it like any other Vue component. It **exposes** `{ instance }` (**`shallowRef<NekoInstance | null>`** from the internal **`useNeko`**). On the parent **`ref`**, Vue **unwraps** exposed refs, so **`childRef.instance`** matches the live pet handle from **`useNeko()`’s `instance`** (same timing: **`null`** until ready).
+
+### `NekoPet` props (reference)
+
+In **templates**, use **kebab-case** for multi-word names (Vue maps them to camelCase). Types below match **`NekoPet`** / **`UseNekoOptions`** / **`NekoOptions`**.
+
+| Prop (script) | Template (kebab) | Type | Default | Summary |
+| ------------- | ------------------ | ---- | ------- | ------- |
+| **`speed`** | `speed` | `number` | _(omit)_ | Pixels per engine logic tick (`createNeko`; default **24**; engine logic ~5 ticks/sec). |
+| **`fps`** | `fps` | `number` | _(omit)_ | Sprite animation frame rate (default in engine **120**). |
+| **`behaviorMode`** | `behavior-mode` | `BehaviorMode` (number) | _(omit)_ | **Initial** mode at create; live mode changes by **clicking the pet** when `allowBehaviorChange` is true. |
+| **`idleThreshold`** | `idle-threshold` | `number` | _(omit)_ | Idle distance in px (engine default **6**). |
+| **`cursorStandoffPx`** | `cursor-standoff-px` | `number` | _(omit / 0)_ | Chase mode: minimum distance from pointer in px; **0** or omit = sit on cursor. |
+| **`allowBehaviorChange`** | `allow-behavior-change` | `boolean` | **`undefined`** | **`undefined`** = omit field → engine default **`true`**. **`false`** disables click-to-cycle. |
+| **`behaviorCycle`** | `behavior-cycle` | `BehaviorMode[]` | _(omit)_ | Pet-click order; omit for **`DEFAULT_NEKO_BEHAVIOR_CYCLE`**. |
+| **`startX`** | `start-x` | `number` | _(omit)_ | Initial / home X (**0** valid). |
+| **`startY`** | `start-y` | `number` | _(omit)_ | Initial / home Y (**0** valid). |
+| **`autoStart`** | `auto-start` | `boolean` | **`true`** | After `createNeko`, run the loop unless **`mode="rest"`** or **`false`**. |
+| **`respectReducedMotion`** | `respect-reduced-motion` | `boolean` | **`true`** | Skip pet when user prefers reduced motion. |
+| **`startCorner`** | `start-corner` | `string` | _(omit)_ | **`top-left`** \| **`top-right`** \| **`bottom-left`** \| **`bottom-right`** for axes without `startX`/`startY`. |
+| **`anchorSelector`** | `anchor-selector` | `string` | _(omit)_ | `document.querySelector` for anchor; waits for non-zero layout. Prefer **`anchorRef`** in **`useNeko`**. |
+| **`mode`** | `mode` | **`follow`** \| **`rest`** | **`follow`** | **`follow`** = loop runs; **`rest`** = stop at resolved home after create. |
+| **`restUntilFirstPetInteraction`** | `rest-until-first-pet-interaction` | `boolean` | **`undefined`** | First pointer-down on sprite wakes **`follow`** without consuming first cycle step. |
+| **`debug`** | `debug` | `boolean` | **`false`** | **`[neko-vue]`** console logs for placement / recreates. |
 
 **`allowBehaviorChange`:** Omit the prop to keep the **engine default** (`true`). A plain optional `Boolean` prop in Vue would otherwise become `false` when unset; here the default is explicitly `undefined`, and options passed to `createNeko` omit `undefined` fields so engine defaults apply.
 
@@ -325,6 +353,18 @@ const {
 // readonly currentMode when driving imperatively; or toggle `mode` ref as above
 </script>
 ```
+
+### `useNeko()` return value (reference)
+
+| Name | What it is |
+| ---- | ----------- |
+| **`instance`** | **`ShallowRef<NekoInstance \| null>`** — set after load + `createNeko`; **`null`** before ready, after **`destroy`**, or while skipped for reduced motion / deferred anchor. |
+| **`error`** | **`Ref<Error \| null>`** — load / `createNeko` failure; cleared at the start of each recreate attempt. |
+| **`isReady`** | **`Ref<boolean>`**, **`true`** once `createNeko` succeeded for the current mount cycle. |
+| **`skippedForReducedMotion`** | **`Ref<boolean>`**, **`true`** when the pet was skipped because the user prefers reduced motion (default gate on). |
+| **`mode`** | Readonly ref: current **`follow`** / **`rest`**; drive with **`setMode`**, **`restAtOrigin`**, **`resumeFollow`**, or a reactive **`mode`** in options. |
+| **`petInteractionAwake`** | Readonly ref; with **`restUntilFirstPetInteraction`**, **`true`** after the first pointer-down on the sprite wakes **`follow`**. |
+| **`setMode`**, **`restAtOrigin`**, **`resumeFollow`**, **`destroy`** | Imperative controls (see [Follow vs rest (`mode`)](#follow-vs-rest-mode) in the composable section below). |
 
 **Custom click cycle and pointer standoff** (same options on **`NekoPet`** as props):
 
@@ -376,6 +416,7 @@ useNeko(
 - **`startX` / `startY`** — passed through to `createNeko` (remember `0` is valid).
 - **`startCorner`** — `top-left` | `top-right` | `bottom-left` | `bottom-right`; fills axes that `startX`/`startY` leave out, using `document.documentElement.clientWidth` and `window.innerHeight` minus `NEKOJS_SPRITE_SIZE` (32).
 - **`anchorRef`** (in `setup`) or **`anchorSelector`** (on `NekoPet`) — use the element’s top-left in viewport space when coordinates are omitted. If you pass either one, **`createNeko` waits** until the matched element exists and has **positive width and height** (`getBoundingClientRect()`, with `offsetWidth` / `offsetHeight` as a fallback) so the pet does not spawn at a bogus position while the anchor is still mounting or collapsed.
+- **`ResizeObserver`** (in **`useNeko`** only): attached when **`anchorRef`** points at an element, so layout changes on that node can trigger a recreate. There is **no** observer for **`anchorSelector`** alone.
 
 Resolution order per axis: **explicit coordinate → anchor → corner → 0**.
 
@@ -403,7 +444,7 @@ Returning to home after the cat has moved uses a **fresh instance** (destroy + c
 
 Use this when you call **`createNeko`** outside **`useNeko`** / **`NekoPet`** (e.g. a custom lifecycle).
 
-- If **`window.createNeko`** already exists, **`loadNekoRuntime()`** resolves to it immediately (no import).
+- If **`globalThis.createNeko`** already exists, **`loadNekoRuntime()`** resolves to it immediately (no import).
 - Otherwise it performs a **one-time** dynamic import of the bundled runtime (same code path as **`useNeko`**).
 
 ```ts
@@ -418,7 +459,7 @@ neko.start();
 
 ## Nuxt / SSR
 
-The pet runtime is **browser-only**. Do not run `loadNekoRuntime` or `useNeko` on the server. In Nuxt, render the pet inside [`<ClientOnly>`](https://nuxt.com/docs/api/components/client-only) or a `.client.vue` component.
+The pet runtime is **browser-only**. Do not run **`loadNekoRuntime`**, **`useNeko`**, or mount **`NekoPet`** on the server. In **Nuxt 4**, use a **`*.client.vue`** component (with [auto-import or `#components`](https://nuxt.com/docs/4.x/guide/directory-structure/components#client-components)) and/or [`<ClientOnly>`](https://nuxt.com/docs/4.x/api/components/client-only). See [Nuxt 4](#4-nuxt-4) above.
 
 ## Motion preferences
 
@@ -464,10 +505,11 @@ vp test
 Runs Vitest against **`loadNekoRuntime`**, `useNeko`, and `NekoPet` (tests set **`window.createNeko`** mocks; happy-dom), including checks that optional fields are not sent as `undefined`, that **`behaviorCycle`** / **`cursorStandoffPx`** reach `createNeko` when set, that anchor `ResizeObserver` does not recreate the pet when the layout size is unchanged, and that **`createNeko` is deferred** until an anchor element has non-zero layout when `anchorRef` is used.
 
 ```bash
-vp check
+vp run check
+vp run check:playground
 ```
 
-Runs format, lint, and TypeScript checks (via Vite+).
+Or **`bun run check:all`** — library paths first, then **`playground/src`** and **`playground/vite.config.ts`** (bare **`vp check`** would typecheck the playground against root `node_modules` and fail). Runs format, lint, and TypeScript via Vite+.
 
 ```bash
 vp pack
@@ -475,11 +517,11 @@ vp pack
 
 Produces **`dist/`** (ESM + `.d.mts`). The playground and any `file:` consumer need a successful pack.
 
-**CI:** Pushes and pull requests against **`main`** run [`.github/workflows/ci.yml`](./.github/workflows/ci.yml): `voidzero-dev/setup-vp`, **`vp check`**, **`vp test`**, and **`vp pack`** (same bar as a clean local run).
+**CI:** Pushes and pull requests against **`main`** run [`.github/workflows/ci.yml`](./.github/workflows/ci.yml): **`actions/checkout@v6`**, **`voidzero-dev/setup-vp`** (Node **24**), **`npm install --prefix playground`**, **`vp run check && vp run check:playground`**, **`vp test`**, **`vp pack`**.
 
 #### 2. Visual / manual test in the browser (playground)
 
-The **[playground](./playground/)** app imports the library through a Vite alias to the parent folder and resolves **`dist/`** via the root `package.json` `exports`. It uses **Vue Router** so each integration style has its **own route** (one pet on screen at a time):
+The **[playground](./playground/)** app aliases **`neko-vue`** to **`../src/index.ts`** in **`playground/vite.config.ts`** so local edits hit the library source without reinstalling. Published consumers still use **`dist/`** via **`package.json` `exports`**. The playground uses **Vue Router** so each integration style has its **own route** (one pet on screen at a time):
 
 | Route             | Demo file               | What it shows                                                                                           |
 | ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------------- |
@@ -513,14 +555,14 @@ More detail: [playground/README.md](./playground/README.md).
 
 #### 3. Try it inside another Vue app on your machine
 
-- **Option A — `npm pack` / `pnpm pack`:** From the repo root, run `vp pack`, then `npm pack` (or equivalent). In your app, install the generated `.tgz` (e.g. `npm install ../path/to/neko-vue-0.0.0.tgz`).
+- **Option A — `npm pack` / `pnpm pack`:** From the repo root, run `vp pack`, then `npm pack` (or equivalent). In your app, install the generated `.tgz` (e.g. `npm install ../path/to/neko-vue-0.1.0.tgz`; the filename matches **`version`** in root `package.json`).
 - **Option B — `file:` dependency:** Point your app’s `package.json` at the folder that contains a built **`dist/`** (same as publishing layout).
 
 Ensure **`vp pack`** has been run so `exports` and types resolve.
 
 ### Package entry shape
 
-**neko-vue** ships as a **single package** with one primary export (`"."` → `dist/index.mjs`). Some libraries use a **monorepo** or **`exports` subpaths** (e.g. `pkg/composable`) for tree-shaking; doing that here would need extra **pack** outputs and an **`exports`** map (not wired yet). A **Nuxt module** would typically live in a **separate package**.
+**neko-vue** is one npm package with a root export (`"."` → `dist/index.mjs`) plus conditional **`exports`** subpaths **`/types`**, **`/placement`**, **`/runtime`**, **`/vue`** (each with **`types`** + **`import`**) — see [Subpath imports](#subpath-imports). A dedicated **Nuxt module** would still typically be a **separate package** if you want zero-config Nuxt integration beyond the steps in [Nuxt 4](#4-nuxt-4).
 
 ---
 
@@ -530,5 +572,6 @@ Ensure **`vp pack`** has been run so `exports` and types resolve.
 vp install
 vp test
 vp pack
-vp check
+vp run check
+vp run check:playground
 ```
