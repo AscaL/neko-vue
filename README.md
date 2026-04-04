@@ -6,6 +6,8 @@ The pet **engine always comes from this package** (a dynamically imported chunk 
 
 **Peer dependency:** `vue` ^3.4 or ^3.5.
 
+**Runtime:** Node.js **24+** (Active LTS line; see `engines` in `package.json`).
+
 ## What this package offers
 
 | Capability              | Details                                                                                                                                                                                                                                             |

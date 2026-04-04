@@ -7,15 +7,19 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Opt in to Node.js 24 for JS-based actions until it becomes the default (see GitHub changelog).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   quality:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       - uses: voidzero-dev/setup-vp@v1
         with:
-          node-version: lts
+          node-version: "24"
           cache: true
           run-install: true
 
