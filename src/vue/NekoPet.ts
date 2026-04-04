@@ -3,23 +3,73 @@ import type { NekoStartCorner } from "../placement/nekoPlacement.ts";
 import type { BehaviorCycle, BehaviorMode } from "../types/index.ts";
 import { type NekoFollowMode, useNeko } from "./useNeko.ts";
 
-/** Public props for {@link NekoPet} — use this type for Volar / `BehaviorMode` hovers (not raw `number`). */
+/**
+ * Public props for {@link NekoPet}. **Per-property JSDoc is what TypeScript shows when consumers hover
+ * a prop or this type** in another repo; it is not inferred from the runtime `props` object below.
+ * Enum-level docs (e.g. {@link BehaviorMode}) appear when you hover the type name or “Go to type”.
+ */
 export interface NekoPetPublicProps {
+  /** Pixels per engine logic tick (omit → default **24**). */
   speed?: number;
+  /** Sprite animation frame rate (omit → default **120**). */
   fps?: number;
+  /**
+   * Initial {@link BehaviorMode} at create time. Clicks on the pet change the live mode when
+   * {@link allowBehaviorChange} is true; updating this prop does not recreate or override the
+   * current mode. **Hover {@link BehaviorMode}** for the full enum / engine contract.
+   */
   behaviorMode?: BehaviorMode;
+  /**
+   * Distance (px) at which the pet counts as idle for behavior logic (engine default **6** when omitted).
+   */
   idleThreshold?: number;
+  /**
+   * Chase mode: minimum distance from the pointer in px (omit or **0** = snap to cursor).
+   */
   cursorStandoffPx?: number;
+  /**
+   * When true, pet clicks cycle {@link BehaviorMode}. Omit or `undefined` so the field is not sent to
+   * the engine (default **true**). Use `default: undefined` on the component so Vue does not coerce
+   * “missing” to `false`.
+   */
   allowBehaviorChange?: boolean;
+  /**
+   * Pet-click mode order when {@link allowBehaviorChange} is true. Omit for {@link DEFAULT_NEKO_BEHAVIOR_CYCLE}.
+   */
   behaviorCycle?: BehaviorCycle;
+  /** Initial X in viewport pixels. `0` is valid; omit → **0**. */
   startX?: number;
+  /** Initial Y in viewport pixels. `0` is valid; omit → **0**. */
   startY?: number;
+  /**
+   * When true (default), keep the animation loop running after `createNeko`. When false or when
+   * {@link mode} is `rest`, the wrapper calls `stop()` right after creation.
+   */
   autoStart?: boolean;
+  /**
+   * When true (default), skip the pet if the user prefers reduced motion. Set `false` only after
+   * explicit consent if you need to override.
+   */
   respectReducedMotion?: boolean;
+  /**
+   * Viewport corner for any axis where {@link startX} / {@link startY} are omitted.
+   */
   startCorner?: NekoStartCorner;
+  /**
+   * `document.querySelector` for an anchor (client only). Waits for non-zero layout. Prefer
+   * {@link useNeko}'s `anchorRef` when you have a template ref.
+   */
   anchorSelector?: string;
+  /**
+   * `follow` — chase / run (loop on). `rest` — stay at resolved home (loop stopped after create).
+   */
   mode?: NekoFollowMode;
+  /**
+   * When true, start in `rest`; first pointer-down on the sprite switches to `follow` without consuming
+   * the first click-cycle step. While waiting, {@link behaviorMode} is forced to {@link BehaviorMode.StayStill}.
+   */
   restUntilFirstPetInteraction?: boolean;
+  /** Log placement / recreate steps with prefix `[neko-vue]`. */
   debug?: boolean;
 }
 
