@@ -17,7 +17,12 @@ import {
   resolveStartPosition,
 } from "../placement/nekoPlacement.ts";
 import { prefersReducedMotion } from "../utils/prefersReducedMotion.ts";
-import { BehaviorMode, type NekoInstance, type NekoOptions } from "../types/index.ts";
+import {
+  BehaviorMode,
+  isBehaviorMode,
+  type NekoInstance,
+  type NekoOptions,
+} from "../types/index.ts";
 
 /** Whether the pet chases the pointer or stays at the resolved start position. */
 export type NekoFollowMode = "follow" | "rest";
@@ -145,12 +150,12 @@ function buildCreateOptions(o: UseNekoOptions, petGateClosed: boolean): NekoOpti
   return omitUndefinedNekoFields(merged);
 }
 
-function readInstanceBehaviorMode(inst: NekoInstance | null): number | undefined {
+function readInstanceBehaviorMode(inst: NekoInstance | null): BehaviorMode | undefined {
   if (!inst) {
     return undefined;
   }
   const v = inst.behaviorMode;
-  return typeof v === "number" ? v : undefined;
+  return isBehaviorMode(v) ? v : undefined;
 }
 
 /**
@@ -162,7 +167,7 @@ function applyBehaviorModeForRecreate(
   nekoOpts: NekoOptions,
   raw: UseNekoOptions,
   petGateClosed: boolean,
-  priorBm: number | undefined,
+  priorBm: BehaviorMode | undefined,
   leavingPetGate: boolean,
 ): void {
   if (petGateClosed && raw.restUntilFirstPetInteraction) {

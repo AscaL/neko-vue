@@ -1,7 +1,27 @@
-import { type PropType, computed, defineComponent, h } from "vue";
+import { type DefineComponent, type PropType, computed, defineComponent, h } from "vue";
 import type { NekoStartCorner } from "../placement/nekoPlacement.ts";
-import type { BehaviorMode } from "../types/index.ts";
+import type { BehaviorCycle, BehaviorMode } from "../types/index.ts";
 import { type NekoFollowMode, useNeko } from "./useNeko.ts";
+
+/** Public props for {@link NekoPet} — use this type for Volar / `BehaviorMode` hovers (not raw `number`). */
+export interface NekoPetPublicProps {
+  speed?: number;
+  fps?: number;
+  behaviorMode?: BehaviorMode;
+  idleThreshold?: number;
+  cursorStandoffPx?: number;
+  allowBehaviorChange?: boolean;
+  behaviorCycle?: BehaviorCycle;
+  startX?: number;
+  startY?: number;
+  autoStart?: boolean;
+  respectReducedMotion?: boolean;
+  startCorner?: NekoStartCorner;
+  anchorSelector?: string;
+  mode?: NekoFollowMode;
+  restUntilFirstPetInteraction?: boolean;
+  debug?: boolean;
+}
 
 /**
  * Mounts the desktop pet on the client. Renders a minimal hidden root node for Vue; the engine draws
@@ -41,7 +61,7 @@ export default defineComponent({
      * Pet-click mode order when {@link allowBehaviorChange} is true. Omit for the bundled default
      * seven-step cycle.
      */
-    behaviorCycle: Array as PropType<BehaviorMode[] | undefined>,
+    behaviorCycle: Array as PropType<BehaviorCycle | undefined>,
     /** Initial X in viewport pixels. `0` is valid; the engine treats omitted as `0`. */
     startX: Number,
     /** Initial Y in viewport pixels. `0` is valid; the engine treats omitted as `0`. */
@@ -117,4 +137,4 @@ export default defineComponent({
         "aria-hidden": true,
       });
   },
-});
+}) as DefineComponent<NekoPetPublicProps>;

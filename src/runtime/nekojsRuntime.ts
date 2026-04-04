@@ -4,27 +4,22 @@
  */
 import { NEKO_SPRITES } from "./nekoSpritesData.ts";
 import {
+  BehaviorMode,
   DEFAULT_NEKO_BEHAVIOR_CYCLE,
+  formatBehaviorMode,
+  isBehaviorMode,
   type NekoInstance,
   type NekoOptions,
 } from "../types/index.ts";
 
-const BEHAVIOR_MODE_MIN = 0;
-const BEHAVIOR_MODE_MAX = 6;
-
-function normalizeBehaviorCycle(raw: NekoOptions["behaviorCycle"]): readonly number[] {
-  const fallback = (): number[] => [...DEFAULT_NEKO_BEHAVIOR_CYCLE];
+function normalizeBehaviorCycle(raw: NekoOptions["behaviorCycle"]): readonly BehaviorMode[] {
+  const fallback = (): BehaviorMode[] => [...DEFAULT_NEKO_BEHAVIOR_CYCLE];
   if (!raw?.length) {
     return fallback();
   }
-  const out: number[] = [];
+  const out: BehaviorMode[] = [];
   for (const m of raw) {
-    if (
-      typeof m === "number" &&
-      Number.isInteger(m) &&
-      m >= BEHAVIOR_MODE_MIN &&
-      m <= BEHAVIOR_MODE_MAX
-    ) {
+    if (isBehaviorMode(m)) {
       out.push(m);
     }
   }
@@ -53,26 +48,19 @@ const NekoState = {
   R_CLAW: 17, // Clawing right (at right boundary)
 };
 
-// Behavior modes (matching original Action enum)
+/**
+ * Legacy C-style names exposed on `globalThis` — numeric values match {@link BehaviorMode}
+ * (engine / original Action enum).
+ */
 const NekoJsBehaviorMode = {
-  CHASE_MOUSE: 0,
-  RUN_AWAY_FROM_MOUSE: 1,
-  RUN_AROUND_RANDOMLY: 2,
-  PACE_AROUND_SCREEN: 3,
-  RUN_AROUND: 4,
-  STAY_STILL: 5,
-  RETURN_HOME_AND_STAY: 6,
-};
-
-const BEHAVIOR_DEBUG_NAMES: Record<number, string> = {
-  [NekoJsBehaviorMode.CHASE_MOUSE]: "Chase Mouse",
-  [NekoJsBehaviorMode.RUN_AWAY_FROM_MOUSE]: "Run Away From Mouse",
-  [NekoJsBehaviorMode.RUN_AROUND_RANDOMLY]: "Run Around Randomly",
-  [NekoJsBehaviorMode.PACE_AROUND_SCREEN]: "Pace Around Screen",
-  [NekoJsBehaviorMode.RUN_AROUND]: "Run Around",
-  [NekoJsBehaviorMode.STAY_STILL]: "Stay Still",
-  [NekoJsBehaviorMode.RETURN_HOME_AND_STAY]: "Return Home And Stay",
-};
+  CHASE_MOUSE: BehaviorMode.ChaseMouse,
+  RUN_AWAY_FROM_MOUSE: BehaviorMode.RunAwayFromMouse,
+  RUN_AROUND_RANDOMLY: BehaviorMode.RunAroundRandomly,
+  PACE_AROUND_SCREEN: BehaviorMode.PaceAroundScreen,
+  RUN_AROUND: BehaviorMode.BallChase,
+  STAY_STILL: BehaviorMode.StayStill,
+  RETURN_HOME_AND_STAY: BehaviorMode.ReturnHomeAndStay,
+} as const;
 
 // Animation timing constants (in frames)
 const STOP_TIME = 4;
@@ -96,7 +84,7 @@ export class Neko implements NekoInstance {
 
   fps!: number;
   speed!: number;
-  behaviorMode!: number;
+  behaviorMode!: BehaviorMode;
   idleThreshold!: number;
   state!: number;
   tickCount!: number;
@@ -138,7 +126,7 @@ export class Neko implements NekoInstance {
   cursorStandoffPx!: number;
 
   /** Modes visited in order on each pet mousedown when behavior change is allowed. */
-  behaviorCycle!: readonly number[];
+  behaviorCycle!: readonly BehaviorMode[];
 
   /** Spawn / home top-left from `createNeko`; used by return-home behavior (mode 6). */
   readonly homeX: number;
@@ -149,12 +137,15 @@ export class Neko implements NekoInstance {
    */
   constructor(options: NekoOptions = {}) {
     // Configuration
-    this.fps = options.fps || 120; // Target FPS (default 120 for smooth movement)
+    this.fps = options.fps ?? 120; // Target FPS (default 120 for smooth movement)
     // Original used 16 pixels/tick for 640x480 screens (~2.5% of width)
     // Modern screens are ~3x larger, so default to 24 for similar feel
-    this.speed = options.speed || 24;
-    this.behaviorMode = options.behaviorMode || NekoJsBehaviorMode.CHASE_MOUSE;
-    this.idleThreshold = options.idleThreshold || 6; // Original m_dwIdleSpace = 6
+    this.speed = options.speed ?? 24;
+    this.behaviorMode =
+      options.behaviorMode !== undefined && isBehaviorMode(options.behaviorMode)
+        ? options.behaviorMode
+        : BehaviorMode.ChaseMouse;
+    this.idleThreshold = options.idleThreshold ?? 6; // Original m_dwIdleSpace = 6
     const standoff = options.cursorStandoffPx;
     this.cursorStandoffPx =
       typeof standoff === "number" && Number.isFinite(standoff) && standoff > 0 ? standoff : 0;
@@ -165,8 +156,8 @@ export class Neko implements NekoInstance {
     this.stateCount = 0; // Increments every 2 original ticks (like m_uStateCount)
 
     // Position (display position for smooth rendering)
-    this.x = options.startX || 0;
-    this.y = options.startY || 0;
+    this.x = options.startX ?? 0;
+    this.y = options.startY ?? 0;
     this.homeX = this.x;
     this.homeY = this.y;
     // Logic position (updated at original 5 FPS tick rate)
@@ -426,25 +417,25 @@ export class Neko implements NekoInstance {
 
     // Update behavior based on mode
     switch (this.behaviorMode) {
-      case NekoJsBehaviorMode.CHASE_MOUSE:
+      case BehaviorMode.ChaseMouse:
         this.chaseMouse();
         break;
-      case NekoJsBehaviorMode.RUN_AWAY_FROM_MOUSE:
+      case BehaviorMode.RunAwayFromMouse:
         this.runAwayFromMouse();
         break;
-      case NekoJsBehaviorMode.RUN_AROUND_RANDOMLY:
+      case BehaviorMode.RunAroundRandomly:
         this.runRandomly();
         break;
-      case NekoJsBehaviorMode.PACE_AROUND_SCREEN:
+      case BehaviorMode.PaceAroundScreen:
         this.paceAroundScreen();
         break;
-      case NekoJsBehaviorMode.RUN_AROUND:
+      case BehaviorMode.BallChase:
         this.runAround();
         break;
-      case NekoJsBehaviorMode.STAY_STILL:
+      case BehaviorMode.StayStill:
         this.stayStillBehavior();
         break;
-      case NekoJsBehaviorMode.RETURN_HOME_AND_STAY:
+      case BehaviorMode.ReturnHomeAndStay:
         this.returnHomeAndStayBehavior();
         break;
     }
@@ -842,7 +833,7 @@ export class Neko implements NekoInstance {
     }
 
     const nextMode = behaviors[nextIndex]!;
-    console.log(`Neko behavior: ${BEHAVIOR_DEBUG_NAMES[nextMode] ?? nextMode}`);
+    console.log(`Neko behavior: ${formatBehaviorMode(nextMode)}`);
   }
 
   /**
