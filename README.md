@@ -38,11 +38,19 @@ Library code under **`src/`** is grouped by role (public API remains **`neko-vue
 
 ## Install
 
+**Vue is a peer dependency** — `neko-vue` does not ship its own copy of Vue (that would risk two Vue runtimes in one app). In a normal Vue 3 app you already have **`vue`** in `package.json`, so add only this package:
+
+```bash
+npm install neko-vue
+```
+
+Same idea with **pnpm**, **Yarn**, or **Bun** (for example `pnpm add neko-vue`). Your app must satisfy **`vue` ^3.4 or ^3.5** (see `peerDependencies` in `package.json`); npm will warn if it’s missing.
+
+**Greenfield / no Vue yet** — install both once:
+
 ```bash
 npm install neko-vue vue
 ```
-
-Use the same idea with **pnpm**, **Yarn**, or **Bun** (for example `pnpm add neko-vue vue`). You must have **Vue 3.4+** or **3.5+** installed alongside `neko-vue`.
 
 ### Subpath imports
 
