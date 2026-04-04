@@ -19,8 +19,11 @@ jobs:
           cache: true
           run-install: true
 
-      - name: Lint, format, and typecheck
-        run: vp check
+      - name: Install playground dependencies
+        run: bun install --cwd playground
+
+      - name: Lint, format, and typecheck (library + playground)
+        run: vp check src tests vite.config.ts && vp check playground/src playground/vite.config.ts
 
       - name: Unit tests
         run: vp test
