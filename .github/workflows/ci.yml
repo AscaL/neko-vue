@@ -19,11 +19,14 @@ jobs:
           cache: true
           run-install: true
 
+      # Playground deps live only under playground/ (vue-router, @vitejs/plugin-vue).
       - name: Install playground dependencies
-        run: bun install --cwd playground
+        run: npm install --prefix playground --no-audit --no-fund
 
+      # Use `vp run check` so we never invoke bare `vp check` (which typechecks playground
+      # against root node_modules and fails). Scripts match package.json `check` / `check:playground`.
       - name: Lint, format, and typecheck (library + playground)
-        run: vp check src tests vite.config.ts && vp check playground/src playground/vite.config.ts
+        run: vp run check && vp run check:playground
 
       - name: Unit tests
         run: vp test
