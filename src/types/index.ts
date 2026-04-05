@@ -106,10 +106,10 @@ export function behaviorCycleOf(...modes: BehaviorMode[]): BehaviorCycle {
 }
 
 /**
- * Options for {@link createNeko}.
+ * Options for `createNeko` (see runtime / `loadNekoRuntime`).
  *
  * Numeric defaults use **nullish coalescing** (`??`): omit or pass `undefined` for engine defaults;
- * **`0` is a real value** for {@link speed}, {@link fps}, {@link idleThreshold}, {@link startX}, {@link startY}.
+ * **`0` is a real value** for `speed`, `fps`, `idleThreshold`, `startX`, and `startY` on this interface.
  * Horizontal bounds use `document.documentElement.clientWidth - {@link NEKOJS_SPRITE_SIZE}`; vertical uses
  * `window.innerHeight - {@link NEKOJS_SPRITE_SIZE}`.
  */
@@ -158,8 +158,8 @@ export interface NekoOptions {
 }
 
 /**
- * Minimal handle returned by {@link createNeko} / {@link loadNekoRuntime}. The concrete {@link Neko}
- * class may expose additional helpers (e.g. `isIdle`).
+ * Minimal handle returned by {@link createNeko} / {@link loadNekoRuntime}. The bundled engine may
+ * expose additional helpers (e.g. `isIdle`).
  */
 export interface NekoInstance {
   /** Starts or resumes the animation interval. */
@@ -170,20 +170,73 @@ export interface NekoInstance {
   destroy(): void;
   /**
    * Current engine behavior mode (updated when the user clicks the pet if `allowBehaviorChange` is
-   * true). The bundled `Neko` class implements this; mocks may omit it.
+   * true). The bundled engine implements this; mocks may omit it.
    */
   behaviorMode?: BehaviorMode;
-  /** Current X in viewport pixels (bundled `Neko` implements). */
+  /** Current X in viewport pixels (bundled engine). */
   x?: number;
-  /** Current Y in viewport pixels (bundled `Neko` implements). */
+  /** Current Y in viewport pixels (bundled engine). */
   y?: number;
   /**
    * Spawn / home top-left from `createNeko` (`startX` / `startY`); return-home uses this. Bundled
-   * `Neko` implements.
+   * engine implements.
    */
   homeX?: number;
   homeY?: number;
 }
+
+/** All mutable fields for the viewport-fixed pet engine (closure-scoped; used by `nekojsRuntime`). */
+export type NekoEngineState = {
+  fps: number;
+  speed: number;
+  behaviorMode: BehaviorMode;
+  idleThreshold: number;
+  state: number;
+  tickCount: number;
+  stateCount: number;
+  x: number;
+  y: number;
+  logicX: number;
+  logicY: number;
+  prevLogicX: number;
+  prevLogicY: number;
+  targetX: number;
+  targetY: number;
+  oldTargetX: number;
+  oldTargetY: number;
+  moveDX: number;
+  moveDY: number;
+  boundsWidth: number;
+  boundsHeight: number;
+  mouseX: number | null;
+  mouseY: number | null;
+  hasMouseMoved: boolean;
+  element: HTMLDivElement;
+  spriteImages: string[];
+  allowBehaviorChange: boolean;
+  animationTable: [number, number][];
+  cornerIndex: number;
+  ballX: number;
+  ballY: number;
+  ballVX: number;
+  ballVY: number;
+  running: boolean;
+  intervalId: ReturnType<typeof setInterval> | null;
+  tickAccumulator: number;
+  actionCount: number;
+  lastMoveDX: number;
+  lastMoveDY: number;
+  cursorStandoffPx: number;
+  behaviorCycle: readonly BehaviorMode[];
+  homeX: number;
+  homeY: number;
+};
+
+/** Full engine handle: {@link NekoInstance} plus internal helpers (`setSprites`, `isIdle`). */
+export type NekoEngineApi = NekoInstance & {
+  setSprites(sprites: readonly string[]): void;
+  isIdle(): boolean;
+};
 
 export type CreateNekoFn = (options?: NekoOptions) => NekoInstance;
 

@@ -2,6 +2,8 @@ export type {
   BehaviorCycle,
   CreateNekoFn,
   LoadNekoRuntimeOptions,
+  NekoEngineApi,
+  NekoEngineState,
   NekoInstance,
   NekoOptions,
 } from "./types/index.ts";

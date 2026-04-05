@@ -8,6 +8,8 @@ import {
   DEFAULT_NEKO_BEHAVIOR_CYCLE,
   formatBehaviorMode,
   isBehaviorMode,
+  type NekoEngineApi,
+  type NekoEngineState,
   type NekoInstance,
   type NekoOptions,
 } from "../types/index.ts";
@@ -75,126 +77,73 @@ const SPRITE_SIZE = 32;
 
 /**
  * Viewport-fixed sprite pet: chase behaviors, `start` / `stop` / `destroy` lifecycle.
- *
- * Document-level listeners use `AbortController` so {@link Neko.destroy} removes handlers cleanly.
+ * Functional factory (closure over mutable state); document listeners use `AbortController`.
  */
-export class Neko implements NekoInstance {
-  /** @internal Consolidates `document` / `window` / element listeners for teardown. */
-  private readonly listenersAbort = new AbortController();
+function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
+  const listenersAbort = new AbortController();
+  const s = {} as NekoEngineState;
 
-  fps!: number;
-  speed!: number;
-  behaviorMode!: BehaviorMode;
-  idleThreshold!: number;
-  state!: number;
-  tickCount!: number;
-  stateCount!: number;
-  x!: number;
-  y!: number;
-  logicX!: number;
-  logicY!: number;
-  prevLogicX!: number;
-  prevLogicY!: number;
-  targetX!: number;
-  targetY!: number;
-  oldTargetX!: number;
-  oldTargetY!: number;
-  moveDX!: number;
-  moveDY!: number;
-  boundsWidth!: number;
-  boundsHeight!: number;
-  mouseX: number | null = null;
-  mouseY: number | null = null;
-  hasMouseMoved!: boolean;
-  element!: HTMLDivElement;
-  spriteImages: string[] = [];
-  allowBehaviorChange!: boolean;
-  animationTable!: [number, number][];
-  cornerIndex!: number;
-  ballX!: number;
-  ballY!: number;
-  ballVX!: number;
-  ballVY!: number;
-  running!: boolean;
-  intervalId: ReturnType<typeof setInterval> | null = null;
-  tickAccumulator = 0;
-  actionCount = 0;
-  lastMoveDX = 0;
-  lastMoveDY = 0;
-
-  /** Minimum distance (px) from movement anchor to pointer in chase mode; 0 = legacy snap-to-cursor. */
-  cursorStandoffPx!: number;
-
-  /** Modes visited in order on each pet mousedown when behavior change is allowed. */
-  behaviorCycle!: readonly BehaviorMode[];
-
-  /** Spawn / home top-left from `createNeko`; used by return-home behavior (mode 6). Clamped on resize. */
-  homeX: number;
-  homeY: number;
-
-  /**
-   * @param options - Initial behavior and layout; see {@link NekoOptions}. Empty object uses defaults.
-   */
-  constructor(options: NekoOptions = {}) {
+  /** One-time: populate `s` from options, then `init()` (DOM + listeners). */
+  function configure(options: NekoOptions = {}) {
     // Configuration
-    this.fps = options.fps ?? 120; // Target FPS (default 120 for smooth movement)
+    s.fps = options.fps ?? 120; // Target FPS (default 120 for smooth movement)
     // Original used 16 pixels/tick for 640x480 screens (~2.5% of width)
     // Modern screens are ~3x larger, so default to 24 for similar feel
-    this.speed = options.speed ?? 24;
-    this.behaviorMode =
+    s.speed = options.speed ?? 24;
+    s.behaviorMode =
       options.behaviorMode !== undefined && isBehaviorMode(options.behaviorMode)
         ? options.behaviorMode
         : BehaviorMode.ChaseMouse;
-    this.idleThreshold = options.idleThreshold ?? 6; // Original m_dwIdleSpace = 6
+    s.idleThreshold = options.idleThreshold ?? 6; // Original m_dwIdleSpace = 6
     const standoff = options.cursorStandoffPx;
-    this.cursorStandoffPx =
+    s.cursorStandoffPx =
       typeof standoff === "number" && Number.isFinite(standoff) && standoff > 0 ? standoff : 0;
 
     // State
-    this.state = NekoState.STOP;
-    this.tickCount = 0; // Increments every frame (like m_uTickCount)
-    this.stateCount = 0; // Increments every 2 original ticks (like m_uStateCount)
+    s.state = NekoState.STOP;
+    s.tickCount = 0; // Increments every frame (like m_uTickCount)
+    s.stateCount = 0; // Increments every 2 original ticks (like m_uStateCount)
 
     // Position (display position for smooth rendering)
-    this.x = options.startX ?? 0;
-    this.y = options.startY ?? 0;
-    this.homeX = this.x;
-    this.homeY = this.y;
+    s.x = options.startX ?? 0;
+    s.y = options.startY ?? 0;
+    s.homeX = s.x;
+    s.homeY = s.y;
     // Logic position (updated at original 5 FPS tick rate)
-    this.logicX = this.x;
-    this.logicY = this.y;
+    s.logicX = s.x;
+    s.logicY = s.y;
     // Previous logic position (for interpolation)
-    this.prevLogicX = this.x;
-    this.prevLogicY = this.y;
+    s.prevLogicX = s.x;
+    s.prevLogicY = s.y;
     // Target tracking
-    this.targetX = this.x;
-    this.targetY = this.y;
-    this.oldTargetX = this.x;
-    this.oldTargetY = this.y;
+    s.targetX = s.x;
+    s.targetY = s.y;
+    s.oldTargetX = s.x;
+    s.oldTargetY = s.y;
     // Movement deltas (preserved like m_nDX, m_nDY in original)
-    this.moveDX = 0;
-    this.moveDY = 0;
+    s.moveDX = 0;
+    s.moveDY = 0;
 
     // Bounds - clientWidth excludes scrollbar, innerHeight is viewport height
-    this.boundsWidth = Math.max(0, document.documentElement.clientWidth - SPRITE_SIZE);
-    this.boundsHeight = Math.max(0, window.innerHeight - SPRITE_SIZE);
+    s.boundsWidth = Math.max(0, document.documentElement.clientWidth - SPRITE_SIZE);
+    s.boundsHeight = Math.max(0, window.innerHeight - SPRITE_SIZE);
 
     // Mouse tracking - null until first mouse event
     // This prevents neko from running somewhere before user moves mouse
-    this.mouseX = null;
-    this.mouseY = null;
-    this.hasMouseMoved = false;
+    s.mouseX = null;
+    s.mouseY = null;
+    s.hasMouseMoved = false;
 
     // DOM element (assigned in init())
-    this.spriteImages = [];
-    this.allowBehaviorChange = options.allowBehaviorChange !== false; // Default true
-    this.behaviorCycle = normalizeBehaviorCycle(options.behaviorCycle);
+    s.spriteImages = [];
+    s.allowBehaviorChange = options.allowBehaviorChange !== false; // Default true
+    s.behaviorCycle = normalizeBehaviorCycle(options.behaviorCycle);
 
     // Animation lookup table (maps state to sprite indices)
     // Format: [frame1_index, frame2_index]
     // These MUST match the original C++ m_nAnimation table EXACTLY
     // From Neko.cpp lines 40-57:
-    this.animationTable = [
+    s.animationTable = [
       [28, 28], // STOP: m_nAnimation[STOP][0]=28, [1]=28
       [25, 28], // WASH: m_nAnimation[WASH][0]=25, [1]=28
       [26, 27], // SCRATCH: m_nAnimation[SCRATCH][0]=26, [1]=27
@@ -216,13 +165,13 @@ export class Neko implements NekoInstance {
     ];
 
     // Additional state for behaviors
-    this.cornerIndex = 0;
-    this.ballX = 0;
-    this.ballY = 0;
-    this.ballVX = 0;
-    this.ballVY = 0;
+    s.cornerIndex = 0;
+    s.ballX = 0;
+    s.ballY = 0;
+    s.ballVX = 0;
+    s.ballVY = 0;
 
-    this.init();
+    init();
   }
 
   /**
@@ -230,55 +179,55 @@ export class Neko implements NekoInstance {
    * `innerHeight` change. Without this, a still pet (or `stop()`ped `rest` mode) can remain off-screen
    * with no ticks to clamp position.
    */
-  private clampLayoutToViewport(): void {
+  function clampLayoutToViewport(): void {
     const bw = Math.max(0, document.documentElement.clientWidth - SPRITE_SIZE);
     const bh = Math.max(0, window.innerHeight - SPRITE_SIZE);
-    this.boundsWidth = bw;
-    this.boundsHeight = bh;
+    s.boundsWidth = bw;
+    s.boundsHeight = bh;
 
     const clamp = (v: number, max: number): number =>
       max <= 0 ? 0 : Math.max(0, Math.min(max, v));
 
-    this.homeX = clamp(this.homeX, bw);
-    this.homeY = clamp(this.homeY, bh);
+    s.homeX = clamp(s.homeX, bw);
+    s.homeY = clamp(s.homeY, bh);
 
-    this.logicX = clamp(this.logicX, bw);
-    this.logicY = clamp(this.logicY, bh);
-    this.prevLogicX = this.logicX;
-    this.prevLogicY = this.logicY;
-    this.x = this.logicX;
-    this.y = this.logicY;
-    this.tickAccumulator = 0;
+    s.logicX = clamp(s.logicX, bw);
+    s.logicY = clamp(s.logicY, bh);
+    s.prevLogicX = s.logicX;
+    s.prevLogicY = s.logicY;
+    s.x = s.logicX;
+    s.y = s.logicY;
+    s.tickAccumulator = 0;
 
-    const footX = this.logicX + SPRITE_SIZE / 2;
-    const footY = this.logicY + SPRITE_SIZE - 1;
-    this.targetX = footX;
-    this.targetY = footY;
-    this.oldTargetX = footX;
-    this.oldTargetY = footY;
+    const footX = s.logicX + SPRITE_SIZE / 2;
+    const footY = s.logicY + SPRITE_SIZE - 1;
+    s.targetX = footX;
+    s.targetY = footY;
+    s.oldTargetX = footX;
+    s.oldTargetY = footY;
 
-    if (!(this.ballX === 0 && this.ballY === 0)) {
-      this.ballX = clamp(this.ballX, bw);
-      this.ballY = clamp(this.ballY, bh);
+    if (!(s.ballX === 0 && s.ballY === 0)) {
+      s.ballX = clamp(s.ballX, bw);
+      s.ballY = clamp(s.ballY, bh);
     }
 
-    this.updatePosition();
+    updatePosition();
   }
 
-  private init(): void {
+  function init(): void {
     // Create the neko element with defensive styles to prevent global CSS interference
-    this.element = document.createElement("div");
-    this.element.className = "neko";
-    this.element.style.cssText = `
+    s.element = document.createElement("div");
+    s.element.className = "neko";
+    s.element.style.cssText = `
       position: fixed;
       width: ${SPRITE_SIZE}px;
       height: ${SPRITE_SIZE}px;
       image-rendering: pixelated;
-      pointer-events: ${this.allowBehaviorChange ? "auto" : "none"};
-      cursor: ${this.allowBehaviorChange ? "pointer" : "default"};
+      pointer-events: ${s.allowBehaviorChange ? "auto" : "none"};
+      cursor: ${s.allowBehaviorChange ? "pointer" : "default"};
       z-index: 999999;
-      left: ${this.x}px;
-      top: ${this.y}px;
+      left: ${s.x}px;
+      top: ${s.y}px;
       margin: 0;
       padding: 0;
       border: none;
@@ -307,24 +256,24 @@ export class Neko implements NekoInstance {
       -webkit-user-drag: none;
       pointer-events: none;
     `;
-    this.element.appendChild(img);
+    s.element.appendChild(img);
 
-    document.body.appendChild(this.element);
+    document.body.appendChild(s.element);
 
     // Click to cycle through behaviors
     // Use mousedown instead of click - click requires mouseup on same element,
     // which fails if the cat moves between mousedown and mouseup
-    const signal = this.listenersAbort.signal;
+    const signal = listenersAbort.signal;
 
-    if (this.allowBehaviorChange) {
-      this.element.addEventListener(
+    if (s.allowBehaviorChange) {
+      s.element.addEventListener(
         "mousedown",
         (e) => {
           e.stopPropagation();
           e.preventDefault(); // Prevent text selection
           // Make cat appear surprised/awake
-          this.setState(NekoState.AWAKE);
-          this.cycleBehavior();
+          setState(NekoState.AWAKE);
+          cycleBehavior();
         },
         { signal },
       );
@@ -334,165 +283,165 @@ export class Neko implements NekoInstance {
     document.addEventListener(
       "mousemove",
       (e) => {
-        this.mouseX = e.clientX;
-        this.mouseY = e.clientY;
-        this.hasMouseMoved = true;
+        s.mouseX = e.clientX;
+        s.mouseY = e.clientY;
+        s.hasMouseMoved = true;
       },
       { signal },
     );
 
     // Update bounds on resize and clamp layout so the sprite stays reachable (incl. when `stop()`ped).
-    window.addEventListener("resize", () => this.clampLayoutToViewport(), { signal });
+    window.addEventListener("resize", () => clampLayoutToViewport(), { signal });
 
-    // Keep constructor `startX` / `startY` (placement / corners / anchor). Do not randomize — callers
+    // Keep initial `startX` / `startY` (placement / corners / anchor). Do not randomize — callers
     // rely on resolved coordinates; random spawn would ignore `createNeko` options.
-    this.targetX = this.x + SPRITE_SIZE / 2;
-    this.targetY = this.y + SPRITE_SIZE - 1;
-    this.oldTargetX = this.targetX;
-    this.oldTargetY = this.targetY;
-    this.updatePosition();
+    s.targetX = s.x + SPRITE_SIZE / 2;
+    s.targetY = s.y + SPRITE_SIZE - 1;
+    s.oldTargetX = s.targetX;
+    s.oldTargetY = s.targetY;
+    updatePosition();
 
     // Animation loop
-    this.running = false;
-    this.intervalId = null;
+    s.running = false;
+    s.intervalId = null;
   }
 
   /** Starts the render / logic interval (runs at `fps`). */
-  start(): void {
-    if (this.running) return;
-    this.running = true;
+  function start(): void {
+    if (s.running) return;
+    s.running = true;
 
     // Calculate interval from FPS
     // Higher FPS = smoother movement while maintaining same speed
-    const interval = 1000 / this.fps;
-    this.intervalId = setInterval(() => {
-      this.update();
+    const interval = 1000 / s.fps;
+    s.intervalId = setInterval(() => {
+      update();
     }, interval);
   }
 
   /** Stops the interval; does not remove the DOM node or reset position. */
-  stop(): void {
-    this.running = false;
-    if (this.intervalId) {
-      clearInterval(this.intervalId);
-      this.intervalId = null;
+  function stop(): void {
+    s.running = false;
+    if (s.intervalId) {
+      clearInterval(s.intervalId);
+      s.intervalId = null;
     }
   }
 
-  /** Assigns PNG data URLs for animation frames (see bundled {@link NEKO_SPRITES}). */
-  setSprites(sprites: readonly string[]): void {
-    this.spriteImages = [...sprites];
-    this.updateSprite();
+  /** Assigns PNG data URLs for animation frames (see `NEKO_SPRITES` in `./nekoSpritesData.ts`). */
+  function setSprites(sprites: readonly string[]): void {
+    s.spriteImages = [...sprites];
+    updateSprite();
   }
 
-  private updateSprite(): void {
-    if (this.spriteImages.length === 0) return;
+  function updateSprite(): void {
+    if (s.spriteImages.length === 0) return;
 
     // Get the current animation frame index
     // Uses tickCount which is scaled to match original 5 FPS timing
     let frameIndex: number;
-    if (this.state === NekoState.SLEEP) {
+    if (s.state === NekoState.SLEEP) {
       // Slower animation for sleep (toggles every 4 ticks in original = 800ms)
-      frameIndex = this.animationTable[this.state][(this.tickCount >> 2) & 0x1];
+      frameIndex = s.animationTable[s.state][(s.tickCount >> 2) & 0x1];
     } else {
       // Normal animation speed (toggles every tick in original = 200ms)
-      frameIndex = this.animationTable[this.state][this.tickCount & 0x1];
+      frameIndex = s.animationTable[s.state][s.tickCount & 0x1];
     }
 
     // Update the image
-    const img = this.element.querySelector("img");
-    if (img && this.spriteImages[frameIndex]) {
-      img.src = this.spriteImages[frameIndex];
+    const img = s.element.querySelector("img");
+    if (img && s.spriteImages[frameIndex]) {
+      img.src = s.spriteImages[frameIndex];
     }
   }
 
-  private updatePosition(): void {
-    this.element.style.left = Math.round(this.x) + "px";
-    this.element.style.top = Math.round(this.y) + "px";
+  function updatePosition(): void {
+    s.element.style.left = Math.round(s.x) + "px";
+    s.element.style.top = Math.round(s.y) + "px";
   }
 
-  private update(): void {
+  function update(): void {
     // Track time accumulator for original tick timing
-    // Original runs at 5 FPS (200ms per tick), we run at this.fps
+    // Original runs at 5 FPS (200ms per tick), we run at s.fps
     // We need to accumulate fractional ticks and process when we hit a full tick
     const originalFPS = 5;
-    this.tickAccumulator += originalFPS / this.fps;
+    s.tickAccumulator += originalFPS / s.fps;
 
     // Process as many original ticks as have accumulated
-    while (this.tickAccumulator >= 1) {
-      this.tickAccumulator -= 1;
+    while (s.tickAccumulator >= 1) {
+      s.tickAccumulator -= 1;
       // Save previous position before processing tick
-      this.prevLogicX = this.logicX;
-      this.prevLogicY = this.logicY;
-      this.processOriginalTick();
+      s.prevLogicX = s.logicX;
+      s.prevLogicY = s.logicY;
+      processOriginalTick();
     }
 
     // Smooth interpolation between logic positions
     // tickAccumulator represents progress (0-1) towards next tick
-    const t = this.tickAccumulator;
-    this.x = this.prevLogicX + (this.logicX - this.prevLogicX) * t;
-    this.y = this.prevLogicY + (this.logicY - this.prevLogicY) * t;
+    const t = s.tickAccumulator;
+    s.x = s.prevLogicX + (s.logicX - s.prevLogicX) * t;
+    s.y = s.prevLogicY + (s.logicY - s.prevLogicY) * t;
 
     // Update display position every frame
-    this.updatePosition();
+    updatePosition();
   }
 
-  private processOriginalTick(): void {
+  function processOriginalTick(): void {
     // This runs at the original 5 FPS equivalent timing
     // Increment tick counter (like m_uTickCount)
-    this.tickCount++;
-    if (this.tickCount >= 9999) this.tickCount = 0;
+    s.tickCount++;
+    if (s.tickCount >= 9999) s.tickCount = 0;
 
     // Increment state counter every 2 ticks (like original)
-    if (this.tickCount % 2 === 0) {
-      this.stateCount++;
+    if (s.tickCount % 2 === 0) {
+      s.stateCount++;
     }
 
     // Update behavior based on mode
-    switch (this.behaviorMode) {
+    switch (s.behaviorMode) {
       case BehaviorMode.ChaseMouse:
-        this.chaseMouse();
+        chaseMouse();
         break;
       case BehaviorMode.RunAwayFromMouse:
-        this.runAwayFromMouse();
+        runAwayFromMouse();
         break;
       case BehaviorMode.RunAroundRandomly:
-        this.runRandomly();
+        runRandomly();
         break;
       case BehaviorMode.PaceAroundScreen:
-        this.paceAroundScreen();
+        paceAroundScreen();
         break;
       case BehaviorMode.BallChase:
-        this.runAround();
+        runAround();
         break;
       case BehaviorMode.StayStill:
-        this.stayStillBehavior();
+        stayStillBehavior();
         break;
       case BehaviorMode.ReturnHomeAndStay:
-        this.returnHomeAndStayBehavior();
+        returnHomeAndStayBehavior();
         break;
     }
 
     // Update animation frame
-    this.updateSprite();
+    updateSprite();
   }
 
-  private chaseMouse(): void {
+  function chaseMouse(): void {
     // Don't chase until mouse has moved at least once
-    if (!this.hasMouseMoved) {
+    if (!s.hasMouseMoved) {
       // Just idle in place - pass target that results in zero movement
-      this.runTowards(this.logicX + SPRITE_SIZE / 2, this.logicY + SPRITE_SIZE - 1);
+      runTowards(s.logicX + SPRITE_SIZE / 2, s.logicY + SPRITE_SIZE - 1);
       return;
     }
-    const mx = this.mouseX;
-    const my = this.mouseY;
+    const mx = s.mouseX;
+    const my = s.mouseY;
     if (mx === null || my === null) return;
 
-    const footX = this.logicX + SPRITE_SIZE / 2;
-    const footY = this.logicY + SPRITE_SIZE - 1;
-    const standoff = this.cursorStandoffPx;
+    const footX = s.logicX + SPRITE_SIZE / 2;
+    const footY = s.logicY + SPRITE_SIZE - 1;
+    const standoff = s.cursorStandoffPx;
     if (standoff <= 0) {
-      this.runTowards(mx, my);
+      runTowards(mx, my);
       return;
     }
 
@@ -500,250 +449,250 @@ export class Neko implements NekoInstance {
     const vy = my - footY;
     const d = Math.sqrt(vx * vx + vy * vy);
     if (d <= standoff || d === 0) {
-      this.runTowards(footX, footY);
+      runTowards(footX, footY);
       return;
     }
     const sx = mx - (vx / d) * standoff;
     const sy = my - (vy / d) * standoff;
-    this.runTowards(sx, sy);
+    runTowards(sx, sy);
   }
 
-  private runAwayFromMouse(): void {
+  function runAwayFromMouse(): void {
     // Don't run away until mouse has moved
-    if (!this.hasMouseMoved) {
-      this.runTowards(this.logicX + SPRITE_SIZE / 2, this.logicY + SPRITE_SIZE - 1);
+    if (!s.hasMouseMoved) {
+      runTowards(s.logicX + SPRITE_SIZE / 2, s.logicY + SPRITE_SIZE - 1);
       return;
     }
 
-    const mx = this.mouseX;
-    const my = this.mouseY;
+    const mx = s.mouseX;
+    const my = s.mouseY;
     if (mx === null || my === null) return;
 
     // Original uses m_dwIdleSpace * 16 as the trigger distance
-    const dwLimit = this.idleThreshold * 16;
-    const xdiff = this.logicX + SPRITE_SIZE / 2 - mx;
-    const ydiff = this.logicY + SPRITE_SIZE / 2 - my;
+    const dwLimit = s.idleThreshold * 16;
+    const xdiff = s.logicX + SPRITE_SIZE / 2 - mx;
+    const ydiff = s.logicY + SPRITE_SIZE / 2 - my;
 
     if (Math.abs(xdiff) < dwLimit && Math.abs(ydiff) < dwLimit) {
       // Mouse cursor is too close - run away
       const dLength = Math.sqrt(xdiff * xdiff + ydiff * ydiff);
       let targetX, targetY;
       if (dLength !== 0) {
-        targetX = this.logicX + (xdiff / dLength) * dwLimit;
-        targetY = this.logicY + (ydiff / dLength) * dwLimit;
+        targetX = s.logicX + (xdiff / dLength) * dwLimit;
+        targetY = s.logicY + (ydiff / dLength) * dwLimit;
       } else {
         targetX = targetY = 32;
       }
-      this.runTowards(targetX, targetY);
+      runTowards(targetX, targetY);
       // Skip awake animation like original
-      if (this.state === NekoState.AWAKE) {
-        this.calcDirection(targetX - this.logicX, targetY - this.logicY);
+      if (s.state === NekoState.AWAKE) {
+        calcDirection(targetX - s.logicX, targetY - s.logicY);
       }
     } else {
       // Keep running to current target (idle in place)
-      this.runTowards(this.targetX, this.targetY);
+      runTowards(s.targetX, s.targetY);
     }
   }
 
-  private runRandomly(): void {
+  function runRandomly(): void {
     // Original: increments actionCount while sleeping, picks new target after idleSpace*10
-    if (this.state === NekoState.SLEEP) {
-      this.actionCount = (this.actionCount || 0) + 1;
+    if (s.state === NekoState.SLEEP) {
+      s.actionCount = (s.actionCount || 0) + 1;
     }
-    if ((this.actionCount || 0) > this.idleThreshold * 10) {
-      this.actionCount = 0;
-      this.targetX = Math.random() * this.boundsWidth;
-      this.targetY = Math.random() * this.boundsHeight;
-      this.runTowards(this.targetX, this.targetY);
+    if ((s.actionCount || 0) > s.idleThreshold * 10) {
+      s.actionCount = 0;
+      s.targetX = Math.random() * s.boundsWidth;
+      s.targetY = Math.random() * s.boundsHeight;
+      runTowards(s.targetX, s.targetY);
     } else {
-      this.runTowards(this.targetX, this.targetY);
+      runTowards(s.targetX, s.targetY);
     }
   }
 
-  private paceAroundScreen(): void {
+  function paceAroundScreen(): void {
     // Original checks if neko has stopped moving (m_nDX == 0 && m_nDY == 0)
     // We track this via lastMoveDX/DY
-    if (this.lastMoveDX === 0 && this.lastMoveDY === 0) {
-      this.cornerIndex = ((this.cornerIndex || 0) + 1) % 4;
+    if (s.lastMoveDX === 0 && s.lastMoveDY === 0) {
+      s.cornerIndex = ((s.cornerIndex || 0) + 1) % 4;
     }
 
     // Corners offset by sprite size (matching original)
     // Target positions that result in neko stopping at the corners
     const corners = [
       [SPRITE_SIZE + SPRITE_SIZE / 2, SPRITE_SIZE + SPRITE_SIZE - 1],
-      [SPRITE_SIZE + SPRITE_SIZE / 2, this.boundsHeight - SPRITE_SIZE + SPRITE_SIZE - 1],
+      [SPRITE_SIZE + SPRITE_SIZE / 2, s.boundsHeight - SPRITE_SIZE + SPRITE_SIZE - 1],
       [
-        this.boundsWidth - SPRITE_SIZE + SPRITE_SIZE / 2,
-        this.boundsHeight - SPRITE_SIZE + SPRITE_SIZE - 1,
+        s.boundsWidth - SPRITE_SIZE + SPRITE_SIZE / 2,
+        s.boundsHeight - SPRITE_SIZE + SPRITE_SIZE - 1,
       ],
-      [this.boundsWidth - SPRITE_SIZE + SPRITE_SIZE / 2, SPRITE_SIZE + SPRITE_SIZE - 1],
+      [s.boundsWidth - SPRITE_SIZE + SPRITE_SIZE / 2, SPRITE_SIZE + SPRITE_SIZE - 1],
     ];
 
-    const target = corners[this.cornerIndex || 0];
-    this.runTowards(target[0], target[1]);
+    const target = corners[s.cornerIndex || 0];
+    runTowards(target[0], target[1]);
   }
 
-  private runAround(): void {
+  function runAround(): void {
     // Original ball physics with repelling from edges
-    const dwBoundingBox = this.speed * 8;
+    const dwBoundingBox = s.speed * 8;
 
-    // Initialize ball if needed (matching original constructor)
-    if (this.ballX === 0 && this.ballY === 0) {
-      this.ballX = Math.random() * (this.boundsWidth - dwBoundingBox);
-      this.ballY = Math.random() * (this.boundsHeight - dwBoundingBox);
-      this.ballVX = (Math.random() < 0.5 ? 1 : -1) * (this.speed / 2) + 1;
-      this.ballVY = (Math.random() < 0.5 ? 1 : -1) * (this.speed / 2) + 1;
+    // Initialize ball if needed (matching original init)
+    if (s.ballX === 0 && s.ballY === 0) {
+      s.ballX = Math.random() * (s.boundsWidth - dwBoundingBox);
+      s.ballY = Math.random() * (s.boundsHeight - dwBoundingBox);
+      s.ballVX = (Math.random() < 0.5 ? 1 : -1) * (s.speed / 2) + 1;
+      s.ballVY = (Math.random() < 0.5 ? 1 : -1) * (s.speed / 2) + 1;
     }
 
     // Move invisible ball
-    this.ballX += this.ballVX;
-    this.ballY += this.ballVY;
+    s.ballX += s.ballVX;
+    s.ballY += s.ballVY;
 
     // Repel from edges (original logic)
-    if (this.ballX < dwBoundingBox) {
-      if (this.ballX > 0) this.ballVX++;
-      else this.ballVX = -this.ballVX;
-    } else if (this.ballX > this.boundsWidth - dwBoundingBox) {
-      if (this.ballX < this.boundsWidth) this.ballVX--;
-      else this.ballVX = -this.ballVX;
+    if (s.ballX < dwBoundingBox) {
+      if (s.ballX > 0) s.ballVX++;
+      else s.ballVX = -s.ballVX;
+    } else if (s.ballX > s.boundsWidth - dwBoundingBox) {
+      if (s.ballX < s.boundsWidth) s.ballVX--;
+      else s.ballVX = -s.ballVX;
     }
 
-    if (this.ballY < dwBoundingBox) {
-      if (this.ballY > 0) this.ballVY++;
-      else this.ballVY = -this.ballVY;
-    } else if (this.ballY > this.boundsHeight - dwBoundingBox) {
-      if (this.ballY < this.boundsHeight) this.ballVY--;
-      else this.ballVY = -this.ballVY;
+    if (s.ballY < dwBoundingBox) {
+      if (s.ballY > 0) s.ballVY++;
+      else s.ballVY = -s.ballVY;
+    } else if (s.ballY > s.boundsHeight - dwBoundingBox) {
+      if (s.ballY < s.boundsHeight) s.ballVY--;
+      else s.ballVY = -s.ballVY;
     }
 
-    this.runTowards(this.ballX, this.ballY);
+    runTowards(s.ballX, s.ballY);
   }
 
-  /** Idle in place at the current logic position (same target pattern as “wait for mouse”). */
-  private stayStillBehavior(): void {
-    this.runTowards(this.logicX + SPRITE_SIZE / 2, this.logicY + SPRITE_SIZE - 1);
+  /** Idle in place at the current logic position (same target pattern as "wait for mouse"). */
+  function stayStillBehavior(): void {
+    runTowards(s.logicX + SPRITE_SIZE / 2, s.logicY + SPRITE_SIZE - 1);
   }
 
   /** Move toward spawn, then idle there. */
-  private returnHomeAndStayBehavior(): void {
-    const targetX = this.homeX + SPRITE_SIZE / 2;
-    const targetY = this.homeY + SPRITE_SIZE - 1;
-    const dx = targetX - this.logicX - SPRITE_SIZE / 2;
-    const dy = targetY - this.logicY - SPRITE_SIZE + 1;
+  function returnHomeAndStayBehavior(): void {
+    const targetX = s.homeX + SPRITE_SIZE / 2;
+    const targetY = s.homeY + SPRITE_SIZE - 1;
+    const dx = targetX - s.logicX - SPRITE_SIZE / 2;
+    const dy = targetY - s.logicY - SPRITE_SIZE + 1;
     const distance = Math.sqrt(dx * dx + dy * dy);
-    if (distance <= this.speed) {
-      this.logicX = this.homeX;
-      this.logicY = this.homeY;
-      this.prevLogicX = this.homeX;
-      this.prevLogicY = this.homeY;
+    if (distance <= s.speed) {
+      s.logicX = s.homeX;
+      s.logicY = s.homeY;
+      s.prevLogicX = s.homeX;
+      s.prevLogicY = s.homeY;
     }
-    this.runTowards(targetX, targetY);
+    runTowards(targetX, targetY);
   }
 
-  private setState(newState: number): void {
+  function setState(newState: number): void {
     // Reset counters on state change (like original SetState)
-    this.tickCount = 0;
-    this.stateCount = 0;
-    this.state = newState;
+    s.tickCount = 0;
+    s.stateCount = 0;
+    s.state = newState;
   }
 
-  private runTowards(targetX: number, targetY: number): void {
+  function runTowards(targetX: number, targetY: number): void {
     // Store old target for MoveStart check
-    this.oldTargetX = this.targetX;
-    this.oldTargetY = this.targetY;
-    this.targetX = targetX;
-    this.targetY = targetY;
+    s.oldTargetX = s.targetX;
+    s.oldTargetY = s.targetY;
+    s.targetX = targetX;
+    s.targetY = targetY;
 
     // Calculate distance to target (using logic position, not display position)
-    const dx = targetX - this.logicX - SPRITE_SIZE / 2; // Stop in middle of cursor
-    const dy = targetY - this.logicY - SPRITE_SIZE + 1; // Just above cursor
+    const dx = targetX - s.logicX - SPRITE_SIZE / 2; // Stop in middle of cursor
+    const dy = targetY - s.logicY - SPRITE_SIZE + 1; // Just above cursor
     const distance = Math.sqrt(dx * dx + dy * dy);
 
     // Calculate movement delta (like original m_nDX, m_nDY)
-    // Store as instance variables so they persist across ticks
+    // Store on `s` so they persist across ticks
     // IMPORTANT: Use integers like original to prevent direction flickering
     // which causes state resets and prevents wall clawing
     if (distance !== 0) {
-      if (distance <= this.speed) {
+      if (distance <= s.speed) {
         // Less than top speed - jump the gap
-        this.moveDX = Math.trunc(dx);
-        this.moveDY = Math.trunc(dy);
+        s.moveDX = Math.trunc(dx);
+        s.moveDY = Math.trunc(dy);
       } else {
         // More than top speed - run at top speed
-        this.moveDX = Math.trunc((this.speed * dx) / distance);
-        this.moveDY = Math.trunc((this.speed * dy) / distance);
+        s.moveDX = Math.trunc((s.speed * dx) / distance);
+        s.moveDY = Math.trunc((s.speed * dy) / distance);
       }
     } else {
-      this.moveDX = 0;
-      this.moveDY = 0;
+      s.moveDX = 0;
+      s.moveDY = 0;
     }
 
     // Store for paceAroundScreen check
-    this.lastMoveDX = this.moveDX;
-    this.lastMoveDY = this.moveDY;
+    s.lastMoveDX = s.moveDX;
+    s.lastMoveDY = s.moveDY;
 
     // Check if target moved (MoveStart equivalent)
     const moveStart = !(
-      this.oldTargetX >= this.targetX - this.idleThreshold &&
-      this.oldTargetX <= this.targetX + this.idleThreshold &&
-      this.oldTargetY >= this.targetY - this.idleThreshold &&
-      this.oldTargetY <= this.targetY + this.idleThreshold
+      s.oldTargetX >= s.targetX - s.idleThreshold &&
+      s.oldTargetX <= s.targetX + s.idleThreshold &&
+      s.oldTargetY >= s.targetY - s.idleThreshold &&
+      s.oldTargetY <= s.targetY + s.idleThreshold
     );
 
     // State machine (matching original RunTowards switch)
-    switch (this.state) {
+    switch (s.state) {
       case NekoState.STOP:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
-        } else if (this.stateCount >= STOP_TIME) {
+          setState(NekoState.AWAKE);
+        } else if (s.stateCount >= STOP_TIME) {
           // Check for wall scratching using preserved moveDX/moveDY
-          if (this.moveDX < 0 && this.logicX <= 0) {
-            this.setState(NekoState.L_CLAW);
-          } else if (this.moveDX > 0 && this.logicX >= this.boundsWidth) {
-            this.setState(NekoState.R_CLAW);
-          } else if (this.moveDY < 0 && this.logicY <= 0) {
-            this.setState(NekoState.U_CLAW);
-          } else if (this.moveDY > 0 && this.logicY >= this.boundsHeight) {
-            this.setState(NekoState.D_CLAW);
+          if (s.moveDX < 0 && s.logicX <= 0) {
+            setState(NekoState.L_CLAW);
+          } else if (s.moveDX > 0 && s.logicX >= s.boundsWidth) {
+            setState(NekoState.R_CLAW);
+          } else if (s.moveDY < 0 && s.logicY <= 0) {
+            setState(NekoState.U_CLAW);
+          } else if (s.moveDY > 0 && s.logicY >= s.boundsHeight) {
+            setState(NekoState.D_CLAW);
           } else {
-            this.setState(NekoState.WASH);
+            setState(NekoState.WASH);
           }
         }
         break;
 
       case NekoState.WASH:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
-        } else if (this.stateCount >= WASH_TIME) {
-          this.setState(NekoState.SCRATCH);
+          setState(NekoState.AWAKE);
+        } else if (s.stateCount >= WASH_TIME) {
+          setState(NekoState.SCRATCH);
         }
         break;
 
       case NekoState.SCRATCH:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
-        } else if (this.stateCount >= SCRATCH_TIME) {
-          this.setState(NekoState.YAWN);
+          setState(NekoState.AWAKE);
+        } else if (s.stateCount >= SCRATCH_TIME) {
+          setState(NekoState.YAWN);
         }
         break;
 
       case NekoState.YAWN:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
-        } else if (this.stateCount >= YAWN_TIME) {
-          this.setState(NekoState.SLEEP);
+          setState(NekoState.AWAKE);
+        } else if (s.stateCount >= YAWN_TIME) {
+          setState(NekoState.SLEEP);
         }
         break;
 
       case NekoState.SLEEP:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
+          setState(NekoState.AWAKE);
         }
         break;
 
       case NekoState.AWAKE:
-        if (this.stateCount >= AWAKE_TIME + Math.floor(Math.random() * 20)) {
-          this.calcDirection(this.moveDX, this.moveDY);
+        if (s.stateCount >= AWAKE_TIME + Math.floor(Math.random() * 20)) {
+          calcDirection(s.moveDX, s.moveDY);
         }
         break;
 
@@ -756,25 +705,25 @@ export class Neko implements NekoInstance {
       case NekoState.DL_MOVE:
       case NekoState.DR_MOVE:
         // Calculate new position using preserved moveDX/moveDY
-        let newX = this.logicX + this.moveDX;
-        let newY = this.logicY + this.moveDY;
+        let newX = s.logicX + s.moveDX;
+        let newY = s.logicY + s.moveDY;
         const wasOutside =
-          newX <= 0 || newX >= this.boundsWidth || newY <= 0 || newY >= this.boundsHeight;
+          newX <= 0 || newX >= s.boundsWidth || newY <= 0 || newY >= s.boundsHeight;
 
         // Update direction
-        this.calcDirection(this.moveDX, this.moveDY);
+        calcDirection(s.moveDX, s.moveDY);
 
         // Clamp position
-        newX = Math.max(0, Math.min(this.boundsWidth, newX));
-        newY = Math.max(0, Math.min(this.boundsHeight, newY));
-        const notMoved = newX === this.logicX && newY === this.logicY;
+        newX = Math.max(0, Math.min(s.boundsWidth, newX));
+        newY = Math.max(0, Math.min(s.boundsHeight, newY));
+        const notMoved = newX === s.logicX && newY === s.logicY;
 
         // Stop if we can't go further
         if (wasOutside && notMoved) {
-          this.setState(NekoState.STOP);
+          setState(NekoState.STOP);
         } else {
-          this.logicX = newX;
-          this.logicY = newY;
+          s.logicX = newX;
+          s.logicY = newY;
         }
         break;
 
@@ -783,19 +732,19 @@ export class Neko implements NekoInstance {
       case NekoState.L_CLAW:
       case NekoState.R_CLAW:
         if (moveStart) {
-          this.setState(NekoState.AWAKE);
-        } else if (this.stateCount >= CLAW_TIME) {
-          this.setState(NekoState.SCRATCH);
+          setState(NekoState.AWAKE);
+        } else if (s.stateCount >= CLAW_TIME) {
+          setState(NekoState.SCRATCH);
         }
         break;
 
       default:
-        this.setState(NekoState.STOP);
+        setState(NekoState.STOP);
         break;
     }
   }
 
-  private calcDirection(dx: number, dy: number): void {
+  function calcDirection(dx: number, dy: number): void {
     // Calculate direction based on movement delta (like original CalcDirection)
     let newState: number;
 
@@ -837,32 +786,32 @@ export class Neko implements NekoInstance {
       }
     }
 
-    if (this.state !== newState) {
-      this.setState(newState);
+    if (s.state !== newState) {
+      setState(newState);
     }
   }
 
   /** @returns True when the sprite is in a stationary / idle animation state. */
-  isIdle(): boolean {
+  function isIdle(): boolean {
     return (
-      this.state === NekoState.STOP ||
-      this.state === NekoState.WASH ||
-      this.state === NekoState.SCRATCH ||
-      this.state === NekoState.YAWN ||
-      this.state === NekoState.SLEEP ||
-      this.state === NekoState.AWAKE
+      s.state === NekoState.STOP ||
+      s.state === NekoState.WASH ||
+      s.state === NekoState.SCRATCH ||
+      s.state === NekoState.YAWN ||
+      s.state === NekoState.SLEEP ||
+      s.state === NekoState.AWAKE
     );
   }
 
-  private cycleBehavior(): void {
-    const behaviors = this.behaviorCycle;
-    const currentIndex = behaviors.indexOf(this.behaviorMode);
+  function cycleBehavior(): void {
+    const behaviors = s.behaviorCycle;
+    const currentIndex = behaviors.indexOf(s.behaviorMode);
     const nextIndex = (currentIndex + 1) % behaviors.length;
-    this.behaviorMode = behaviors[nextIndex]!;
+    s.behaviorMode = behaviors[nextIndex]!;
 
     // Reset state to wake the cat up if sleeping
-    if (this.state === NekoState.SLEEP) {
-      this.setState(NekoState.AWAKE);
+    if (s.state === NekoState.SLEEP) {
+      setState(NekoState.AWAKE);
     }
 
     const nextMode = behaviors[nextIndex]!;
@@ -873,37 +822,62 @@ export class Neko implements NekoInstance {
    * Stops the animation loop, removes listeners, and drops the pet node from the document.
    * Safe to call more than once.
    */
-  destroy(): void {
-    this.stop();
-    this.listenersAbort.abort();
-    if (this.element?.parentNode) {
-      this.element.parentNode.removeChild(this.element);
+  function destroy(): void {
+    stop();
+    listenersAbort.abort();
+    if (s.element?.parentNode) {
+      s.element.parentNode.removeChild(s.element);
     }
   }
+
+  configure(options);
+
+  return {
+    start,
+    stop,
+    destroy,
+    setSprites,
+    isIdle,
+    get behaviorMode() {
+      return s.behaviorMode;
+    },
+    get x() {
+      return s.x;
+    },
+    get y() {
+      return s.y;
+    },
+    get homeX() {
+      return s.homeX;
+    },
+    get homeY() {
+      return s.homeY;
+    },
+  };
 }
 
 /**
- * Creates a pet, wires bundled sprites, and calls {@link Neko.start}.
+ * Creates a pet, wires bundled sprites, and calls `start`.
  *
- * @param options - Passed to {@link Neko}; see {@link NekoOptions}. Omit for defaults.
+ * @param options - Engine options; see {@link NekoOptions}. Omit for defaults.
  * @returns The running instance (`start` already called).
  */
 export function createNeko(options?: NekoOptions): NekoInstance {
-  const neko = new Neko(options ?? {});
-  neko.setSprites(NEKO_SPRITES);
-  neko.start();
-  return neko;
+  const pet = buildNekoEngine(options ?? {});
+  pet.setSprites(NEKO_SPRITES);
+  pet.start();
+  return pet;
 }
 
 function installNekoGlobals(): void {
   if (typeof globalThis === "undefined" || typeof document === "undefined") return;
   const w = globalThis as typeof globalThis & {
-    Neko?: typeof Neko;
+    Neko?: (opts?: NekoOptions) => NekoEngineApi;
     NekoState?: typeof NekoState;
     BehaviorMode?: typeof NekoJsBehaviorMode;
     createNeko?: typeof createNeko;
   };
-  w.Neko = Neko;
+  w.Neko = (opts?: NekoOptions) => buildNekoEngine(opts ?? {});
   w.NekoState = NekoState;
   w.BehaviorMode = NekoJsBehaviorMode;
   w.createNeko = createNeko;

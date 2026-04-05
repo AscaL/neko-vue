@@ -1,10 +1,12 @@
 /**
- * Subpath: `neko-vue/types` — engine-facing types, enums, and constants (no Vue, no loader).
+ * Subpath: `neko-vue/types` — re-exports from `../types/index.ts` (pack entry only).
  */
 export type {
   BehaviorCycle,
   CreateNekoFn,
   LoadNekoRuntimeOptions,
+  NekoEngineApi,
+  NekoEngineState,
   NekoInstance,
   NekoOptions,
 } from "../types/index.ts";
