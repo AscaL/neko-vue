@@ -6,7 +6,6 @@ import { NEKO_SPRITES } from "./nekoSpritesData.ts";
 import {
   BehaviorMode,
   DEFAULT_NEKO_BEHAVIOR_CYCLE,
-  formatBehaviorMode,
   isBehaviorMode,
   type NekoEngineApi,
   type NekoEngineState,
@@ -26,6 +25,10 @@ function normalizeBehaviorCycle(raw: NekoOptions["behaviorCycle"]): readonly Beh
     }
   }
   return out.length > 0 ? out : fallback();
+}
+
+function finiteOpt(n: number | undefined, fallback: number): number {
+  return typeof n === "number" && Number.isFinite(n) ? n : fallback;
 }
 
 // Animation states (matching original Neko.h enum)
@@ -85,16 +88,20 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
 
   /** One-time: populate `s` from options, then `init()` (DOM + listeners). */
   function configure(options: NekoOptions = {}) {
-    // Configuration
-    s.fps = options.fps ?? 120; // Target FPS (default 120 for smooth movement)
-    // Original used 16 pixels/tick for 640x480 screens (~2.5% of width)
-    // Modern screens are ~3x larger, so default to 24 for similar feel
-    s.speed = options.speed ?? 24;
+    // Configuration (`??` does not replace NaN — sanitize so math never poisons position)
+    const fpsOpt = options.fps;
+    s.fps =
+      typeof fpsOpt === "number" && Number.isFinite(fpsOpt) && fpsOpt > 0 ? fpsOpt : 120;
+    const speedOpt = options.speed;
+    s.speed =
+      typeof speedOpt === "number" && Number.isFinite(speedOpt) && speedOpt >= 0 ? speedOpt : 24;
     s.behaviorMode =
       options.behaviorMode !== undefined && isBehaviorMode(options.behaviorMode)
         ? options.behaviorMode
         : BehaviorMode.ChaseMouse;
-    s.idleThreshold = options.idleThreshold ?? 6; // Original m_dwIdleSpace = 6
+    const idleOpt = options.idleThreshold;
+    s.idleThreshold =
+      typeof idleOpt === "number" && Number.isFinite(idleOpt) && idleOpt >= 0 ? idleOpt : 6;
     const standoff = options.cursorStandoffPx;
     s.cursorStandoffPx =
       typeof standoff === "number" && Number.isFinite(standoff) && standoff > 0 ? standoff : 0;
@@ -105,8 +112,8 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     s.stateCount = 0; // Increments every 2 original ticks (like m_uStateCount)
 
     // Position (display position for smooth rendering)
-    s.x = options.startX ?? 0;
-    s.y = options.startY ?? 0;
+    s.x = finiteOpt(options.startX, 0);
+    s.y = finiteOpt(options.startY, 0);
     s.homeX = s.x;
     s.homeY = s.y;
     // Logic position (updated at original 5 FPS tick rate)
@@ -186,7 +193,7 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     s.boundsHeight = bh;
 
     const clamp = (v: number, max: number): number =>
-      max <= 0 ? 0 : Math.max(0, Math.min(max, v));
+      max <= 0 ? 0 : Math.max(0, Math.min(max, Number.isFinite(v) ? v : 0));
 
     s.homeX = clamp(s.homeX, bw);
     s.homeY = clamp(s.homeY, bh);
@@ -378,9 +385,16 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
 
     // Smooth interpolation between logic positions
     // tickAccumulator represents progress (0-1) towards next tick
+    if (!Number.isFinite(s.tickAccumulator)) {
+      s.tickAccumulator = 0;
+    }
     const t = s.tickAccumulator;
     s.x = s.prevLogicX + (s.logicX - s.prevLogicX) * t;
     s.y = s.prevLogicY + (s.logicY - s.prevLogicY) * t;
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.y)) {
+      s.x = Number.isFinite(s.logicX) ? s.logicX : 0;
+      s.y = Number.isFinite(s.logicY) ? s.logicY : 0;
+    }
 
     // Update display position every frame
     updatePosition();
@@ -439,6 +453,15 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
 
     const footX = s.logicX + SPRITE_SIZE / 2;
     const footY = s.logicY + SPRITE_SIZE - 1;
+    if (!Number.isFinite(footX) || !Number.isFinite(footY)) {
+      runTowards(SPRITE_SIZE / 2, SPRITE_SIZE - 1);
+      return;
+    }
+    if (!Number.isFinite(mx) || !Number.isFinite(my)) {
+      runTowards(footX, footY);
+      return;
+    }
+
     const standoff = s.cursorStandoffPx;
     if (standoff <= 0) {
       runTowards(mx, my);
@@ -448,7 +471,7 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     const vx = mx - footX;
     const vy = my - footY;
     const d = Math.sqrt(vx * vx + vy * vy);
-    if (d <= standoff || d === 0) {
+    if (!Number.isFinite(d) || d === 0 || d <= standoff) {
       runTowards(footX, footY);
       return;
     }
@@ -467,17 +490,26 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     const mx = s.mouseX;
     const my = s.mouseY;
     if (mx === null || my === null) return;
+    if (!Number.isFinite(mx) || !Number.isFinite(my)) {
+      runTowards(s.logicX + SPRITE_SIZE / 2, s.logicY + SPRITE_SIZE - 1);
+      return;
+    }
 
     // Original uses m_dwIdleSpace * 16 as the trigger distance
     const dwLimit = s.idleThreshold * 16;
     const xdiff = s.logicX + SPRITE_SIZE / 2 - mx;
     const ydiff = s.logicY + SPRITE_SIZE / 2 - my;
 
-    if (Math.abs(xdiff) < dwLimit && Math.abs(ydiff) < dwLimit) {
+    if (
+      Number.isFinite(dwLimit) &&
+      Math.abs(xdiff) < dwLimit &&
+      Math.abs(ydiff) < dwLimit
+    ) {
       // Mouse cursor is too close - run away
       const dLength = Math.sqrt(xdiff * xdiff + ydiff * ydiff);
-      let targetX, targetY;
-      if (dLength !== 0) {
+      let targetX: number;
+      let targetY: number;
+      if (Number.isFinite(dLength) && dLength > 0) {
         targetX = s.logicX + (xdiff / dLength) * dwLimit;
         targetY = s.logicY + (ydiff / dLength) * dwLimit;
       } else {
@@ -597,6 +629,13 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
   }
 
   function runTowards(targetX: number, targetY: number): void {
+    const footX = s.logicX + SPRITE_SIZE / 2;
+    const footY = s.logicY + SPRITE_SIZE - 1;
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetY)) {
+      targetX = footX;
+      targetY = footY;
+    }
+
     // Store old target for MoveStart check
     s.oldTargetX = s.targetX;
     s.oldTargetY = s.targetY;
@@ -612,7 +651,7 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     // Store on `s` so they persist across ticks
     // IMPORTANT: Use integers like original to prevent direction flickering
     // which causes state resets and prevents wall clawing
-    if (distance !== 0) {
+    if (Number.isFinite(distance) && distance > 0) {
       if (distance <= s.speed) {
         // Less than top speed - jump the gap
         s.moveDX = Math.trunc(dx);
@@ -754,34 +793,38 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
       const largeX = dx;
       const largeY = -dy; // Y is inverted
       const length = Math.sqrt(largeX * largeX + largeY * largeY);
-      const sinTheta = largeY / length;
-
-      const sinPiPer8 = 0.3826834323651;
-      const sinPiPer8Times3 = 0.9238795325113;
-
-      if (dx > 0) {
-        if (sinTheta > sinPiPer8Times3) {
-          newState = NekoState.U_MOVE;
-        } else if (sinTheta > sinPiPer8) {
-          newState = NekoState.UR_MOVE;
-        } else if (sinTheta > -sinPiPer8) {
-          newState = NekoState.R_MOVE;
-        } else if (sinTheta > -sinPiPer8Times3) {
-          newState = NekoState.DR_MOVE;
-        } else {
-          newState = NekoState.D_MOVE;
-        }
+      if (!Number.isFinite(length) || length <= 0) {
+        newState = NekoState.STOP;
       } else {
-        if (sinTheta > sinPiPer8Times3) {
-          newState = NekoState.U_MOVE;
-        } else if (sinTheta > sinPiPer8) {
-          newState = NekoState.UL_MOVE;
-        } else if (sinTheta > -sinPiPer8) {
-          newState = NekoState.L_MOVE;
-        } else if (sinTheta > -sinPiPer8Times3) {
-          newState = NekoState.DL_MOVE;
+        const sinTheta = largeY / length;
+
+        const sinPiPer8 = 0.3826834323651;
+        const sinPiPer8Times3 = 0.9238795325113;
+
+        if (dx > 0) {
+          if (sinTheta > sinPiPer8Times3) {
+            newState = NekoState.U_MOVE;
+          } else if (sinTheta > sinPiPer8) {
+            newState = NekoState.UR_MOVE;
+          } else if (sinTheta > -sinPiPer8) {
+            newState = NekoState.R_MOVE;
+          } else if (sinTheta > -sinPiPer8Times3) {
+            newState = NekoState.DR_MOVE;
+          } else {
+            newState = NekoState.D_MOVE;
+          }
         } else {
-          newState = NekoState.D_MOVE;
+          if (sinTheta > sinPiPer8Times3) {
+            newState = NekoState.U_MOVE;
+          } else if (sinTheta > sinPiPer8) {
+            newState = NekoState.UL_MOVE;
+          } else if (sinTheta > -sinPiPer8) {
+            newState = NekoState.L_MOVE;
+          } else if (sinTheta > -sinPiPer8Times3) {
+            newState = NekoState.DL_MOVE;
+          } else {
+            newState = NekoState.D_MOVE;
+          }
         }
       }
     }
@@ -805,6 +848,9 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
 
   function cycleBehavior(): void {
     const behaviors = s.behaviorCycle;
+    if (behaviors.length === 0) {
+      return;
+    }
     const currentIndex = behaviors.indexOf(s.behaviorMode);
     const nextIndex = (currentIndex + 1) % behaviors.length;
     s.behaviorMode = behaviors[nextIndex]!;
@@ -813,9 +859,6 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     if (s.state === NekoState.SLEEP) {
       setState(NekoState.AWAKE);
     }
-
-    const nextMode = behaviors[nextIndex]!;
-    console.log(`Neko behavior: ${formatBehaviorMode(nextMode)}`);
   }
 
   /**

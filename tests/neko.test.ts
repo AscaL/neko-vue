@@ -397,7 +397,7 @@ describe("useNeko", () => {
         expect(create).toHaveBeenCalledTimes(2);
       });
       const second = calls[1]![0];
-      expect(second.behaviorMode).toBeUndefined();
+      expect(second.behaviorMode).toBe(BehaviorMode.ChaseMouse);
     } finally {
       pet.remove();
       wrapper.unmount();

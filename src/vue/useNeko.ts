@@ -161,7 +161,8 @@ function readInstanceBehaviorMode(inst: NekoInstance | null): BehaviorMode | und
 /**
  * `behaviorMode` in options is only for **initial** create; reactive changes must not recreate.
  * On recreate (anchor/layout/mode…), keep the live engine mode unless we just left the
- * `restUntilFirstPetInteraction` gate (then apply the parent’s initial mode again).
+ * `restUntilFirstPetInteraction` gate (then set the parent’s `behaviorMode` if provided, else
+ * **ChaseMouse** explicitly — same as the engine default, but visible in debug logs).
  */
 function applyBehaviorModeForRecreate(
   nekoOpts: NekoOptions,
@@ -177,7 +178,8 @@ function applyBehaviorModeForRecreate(
     if (raw.behaviorMode !== undefined) {
       nekoOpts.behaviorMode = raw.behaviorMode;
     } else {
-      delete nekoOpts.behaviorMode;
+      // Explicit default so debug payloads match the engine (omitting the key also meant ChaseMouse).
+      nekoOpts.behaviorMode = BehaviorMode.ChaseMouse;
     }
     return;
   }
