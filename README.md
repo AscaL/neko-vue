@@ -136,12 +136,15 @@ Classic “one-file” neko demos often use a **GIF** or scalable strip. This en
 
 ## License
 
-Wrapper and tooling in this repository: [MIT License](./LICENSE).
+Wrapper and tooling in this repository: [MIT License](./LICENSE) — use freely, including commercially, subject to the notice requirement in the license text.
 
-The **bundled pet runtime** in `dist/` is subject to **third-party** terms (GNU GPLv3) described in **`LICENSE`**.
+The **bundled pet runtime** in `dist/` is **third-party** code (nekojs lineage) under **GNU GPLv3**; see **`LICENSE`** and [Acknowledgments](#acknowledgments).
 
 ---
 
 ## Acknowledgments
 
-Desktop pet behavior and sprites trace to **[nekojs](https://github.com/louisabraham/nekojs)** by Louis Abraham.
+This package is **Vue 3 integration and tooling** around existing Neko-style ideas and code; it does not claim to have invented the pet engine.
+
+- **[nekojs](https://github.com/louisabraham/nekojs)** (Louis Abraham) — JavaScript Neko for the web (`createNeko`, sprites, behavior). The bundled runtime in `dist/` follows this project and is licensed under **GPLv3** (see [`LICENSE`](./LICENSE)).
+- **[neko-ts](https://github.com/ABSanthosh/neko-ts)** — TypeScript implementation ([`Neko.ts`](https://github.com/ABSanthosh/neko-ts/blob/master/src/Neko.ts)) that informed how a typed, component-friendly layer could be shaped.

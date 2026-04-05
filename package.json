@@ -1,29 +1,44 @@
 {
   "name": "neko-vue",
   "version": "0.1.5",
-  "description": "Vue 3 desktop pet — typed runtime, composable, and NekoPet component.",
+  "description": "Vue 3 library for a viewport-fixed Neko-style desktop pet: NekoPet component, useNeko composable, loadNekoRuntime, and TypeScript types. Ships the pet engine inside the package (dynamic import). Peer: vue ^3.4 || ^3.5.",
   "keywords": [
+    "animation",
+    "component",
     "composable",
+    "createNeko",
     "desktop-pet",
     "neko",
+    "neko-cat",
     "neko-vue",
     "nekojs",
+    "sprite",
+    "typescript",
+    "viewport",
     "vue",
-    "vue3"
+    "vue-component",
+    "vue3",
+    "vuejs"
   ],
   "homepage": "https://github.com/AscaL/neko-vue#readme",
   "bugs": {
     "url": "https://github.com/AscaL/neko-vue/issues"
   },
   "license": "MIT",
-  "author": "AscaL (https://github.com/AscaL)",
+  "author": {
+    "name": "AscaL",
+    "url": "https://github.com/AscaL"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/AscaL/neko-vue.git"
   },
+  "main": "./dist/index.mjs",
+  "module": "./dist/index.mjs",
   "files": [
     "dist",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "type": "module",
   "sideEffects": false,
