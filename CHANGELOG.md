@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file. See [commit-and-tag-version](https://github.com/absolute-version/commit-and-tag-version) for commit guidelines.
 
+## [0.1.6](https://github.com/AscaL/neko-vue/compare/v0.1.5...v0.1.6) (2026-04-05)
+
+
+### Features
+
+* add NekoEngineApi and NekoEngineState types for enhanced engine functionality ([138ca8d](https://github.com/AscaL/neko-vue/commit/138ca8d2486ec6e8ace114803db32bea0a14548b))
+
 ## [0.1.5](https://github.com/AscaL/neko-vue/compare/v0.1.4...v0.1.5) (2026-04-04)
 
 
