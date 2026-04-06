@@ -1,8 +1,8 @@
-/** Sprite edge length in CSS pixels for viewport bounds (`clientWidth/innerHeight - this`). */
+/** Sprite edge length in CSS pixels for viewport bounds (see runtime `readViewportBounds`). */
 export const NEKOJS_SPRITE_SIZE = 32 as const;
 
 /**
- * Pet behavior / AI mode. Numeric values **must** match the bundled engine (`src/runtime/nekojsRuntime.ts`).
+ * Pet behavior / AI mode. Numeric values **must** match the bundled engine (`src/runtime/nekoEngineMovement.ts`).
  * Click cycles through {@link NekoOptions.behaviorCycle} when `allowBehaviorChange` is true.
  */
 export enum BehaviorMode {
@@ -110,8 +110,9 @@ export function behaviorCycleOf(...modes: BehaviorMode[]): BehaviorCycle {
  *
  * Numeric defaults use **nullish coalescing** (`??`): omit or pass `undefined` for engine defaults;
  * **`0` is a real value** for `speed`, `fps`, `idleThreshold`, `startX`, and `startY` on this interface.
- * Horizontal bounds use `document.documentElement.clientWidth - {@link NEKOJS_SPRITE_SIZE}`; vertical uses
- * `window.innerHeight - {@link NEKOJS_SPRITE_SIZE}`.
+ * Bounds: `visualViewport` width/height (when available and positive) or else
+ * `document.documentElement.clientWidth` / `window.innerHeight`, each minus {@link NEKOJS_SPRITE_SIZE}
+ * (see runtime `readViewportBounds`).
  */
 export interface NekoOptions {
   /**
@@ -119,7 +120,8 @@ export interface NekoOptions {
    */
   speed?: number;
   /**
-   * Render frame rate (default **120** when omitted).
+   * Nominal display rate (default **120** when omitted). The bundled engine steps `update()` from
+   * `requestAnimationFrame` using `1000 / fps` ms between steps.
    */
   fps?: number;
   /**
@@ -155,6 +157,18 @@ export interface NekoOptions {
    * Initial Y position. `0` is valid; omit for default `0`.
    */
   startY?: number;
+  /**
+   * Called after each pet click advances the live {@link behaviorMode} (when
+   * {@link allowBehaviorChange} is true). Receives the **new** mode. Captured when the instance is
+   * created; changing this reference in `useNeko` options triggers recreate (use a stable function
+   * if you want to avoid that).
+   */
+  onBehaviorModeChange?: (mode: BehaviorMode) => void;
+  /**
+   * When true, a short built-in label appears above the sprite with the new behavior’s
+   * {@link BEHAVIOR_MODE_LABELS} text after each successful click cycle step.
+   */
+  showBehaviorOnClick?: boolean;
 }
 
 /**
@@ -162,9 +176,9 @@ export interface NekoOptions {
  * expose additional helpers (e.g. `isIdle`).
  */
 export interface NekoInstance {
-  /** Starts or resumes the animation interval. */
+  /** Starts or resumes the `requestAnimationFrame` animation loop. */
   start(): void;
-  /** Stops the interval without removing the pet from the DOM. */
+  /** Stops the animation loop without removing the pet from the DOM. */
   stop(): void;
   /** Stops the loop, removes listeners, and deletes the pet element. */
   destroy(): void;
@@ -183,6 +197,16 @@ export interface NekoInstance {
    */
   homeX?: number;
   homeY?: number;
+  /**
+   * Bundled engine only — whether the sprite is in a stationary / idle animation state.
+   * Test mocks may omit.
+   */
+  isIdle?(): boolean;
+  /**
+   * Bundled engine only — assign PNG/Data URL frames for the sprite. Used internally by `createNeko`.
+   * Test mocks may omit.
+   */
+  setSprites?(sprites: readonly string[]): void;
 }
 
 /** All mutable fields for the viewport-fixed pet engine (closure-scoped; used by `nekojsRuntime`). */
@@ -212,6 +236,7 @@ export type NekoEngineState = {
   mouseY: number | null;
   hasMouseMoved: boolean;
   element: HTMLDivElement;
+  spriteImg: HTMLImageElement;
   spriteImages: string[];
   allowBehaviorChange: boolean;
   animationTable: [number, number][];
@@ -220,16 +245,29 @@ export type NekoEngineState = {
   ballY: number;
   ballVX: number;
   ballVY: number;
+  /** Set when ball-chase mode has spawned the invisible ball; cleared when leaving that mode. */
+  ballActive: boolean;
   running: boolean;
-  intervalId: ReturnType<typeof setInterval> | null;
+  animationFrameId: number | null;
   tickAccumulator: number;
   actionCount: number;
   lastMoveDX: number;
   lastMoveDY: number;
   cursorStandoffPx: number;
   behaviorCycle: readonly BehaviorMode[];
+  /** Initial spawn/home from options; re-clamped on resize so the viewport can grow again. */
+  placementHomeX: number;
+  placementHomeY: number;
   homeX: number;
   homeY: number;
+  /** From {@link NekoOptions.onBehaviorModeChange}; invoked after each click cycle step. */
+  onBehaviorModeChange?: (mode: BehaviorMode) => void;
+  /** From {@link NekoOptions.showBehaviorOnClick}. */
+  showBehaviorOnClick: boolean;
+  /** Built-in behavior label element; cleaned up in `destroy`. */
+  behaviorHintEl: HTMLDivElement | null;
+  /** Browser timer id from `window.setTimeout` (numeric in DOM typings). */
+  behaviorHintTimeoutId: number | null;
 };
 
 /** Full engine handle: {@link NekoInstance} plus internal helpers (`setSprites`, `isIdle`). */

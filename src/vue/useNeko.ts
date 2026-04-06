@@ -36,6 +36,10 @@ export type NekoFollowMode = "follow" | "rest";
  * If you wrap options in **`computed(() => ({ … }))`** and include `behaviorMode`, changing it still
  * invalidates that computed and may re-run internal watchers — use **`reactive`** for the options
  * object if you need to mutate `behaviorMode` without that effect.
+ *
+ * **`onBehaviorModeChange`** and **`showBehaviorOnClick`** are part of the recreate fingerprint; use a
+ * **stable** `onBehaviorModeChange` reference (e.g. a top-level function) if you do not want the pet
+ * recreated on every parent render.
  */
 export type UseNekoOptions = NekoOptions & {
   /**
@@ -250,6 +254,11 @@ export function useNeko(options: MaybeRefOrGetter<UseNekoOptions | undefined> = 
         return;
       }
       const onPointerDown = (e: MouseEvent) => {
+        /* If we already woke, never block the engine (cleanup can lag one flush; without this,
+         * stopImmediatePropagation would swallow every pet mousedown and click-to-cycle + hint break). */
+        if (petInteractionAwake.value) {
+          return;
+        }
         const pet = document.querySelector(".neko");
         const t = e.target;
         if (!pet || !(t instanceof Node) || !(pet === t || pet.contains(t))) {
@@ -314,6 +323,8 @@ export function useNeko(options: MaybeRefOrGetter<UseNekoOptions | undefined> = 
           respectReducedMotion: raw.respectReducedMotion,
           anchorSelector: raw.anchorSelector,
           debug: raw.debug,
+          showBehaviorOnClick: raw.showBehaviorOnClick === true,
+          onBehaviorModeChange: raw.onBehaviorModeChange,
         };
       },
       async () => {

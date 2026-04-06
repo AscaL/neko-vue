@@ -1,6 +1,6 @@
 import { type DefineComponent, type PropType, computed, defineComponent, h } from "vue";
 import type { NekoStartCorner } from "../placement/nekoPlacement.ts";
-import type { BehaviorCycle, BehaviorMode } from "../types/index.ts";
+import { type BehaviorCycle, type BehaviorMode, isBehaviorMode } from "../types/index.ts";
 import { type NekoFollowMode, useNeko } from "./useNeko.ts";
 
 /**
@@ -11,7 +11,7 @@ import { type NekoFollowMode, useNeko } from "./useNeko.ts";
 export interface NekoPetPublicProps {
   /** Pixels per engine logic tick (omit → default **24**). */
   speed?: number;
-  /** Sprite animation frame rate (omit → default **120**). */
+  /** Nominal display rate — engine steps from `requestAnimationFrame` at `1000 / fps` ms (omit → **120**). */
   fps?: number;
   /**
    * Initial {@link BehaviorMode} at create time. Clicks on the pet change the live mode when
@@ -71,6 +71,11 @@ export interface NekoPetPublicProps {
   restUntilFirstPetInteraction?: boolean;
   /** Log placement / recreate steps with prefix `[neko-vue]`. */
   debug?: boolean;
+  /**
+   * When true, a short built-in label appears above the sprite after each click-to-cycle step
+   * (requires {@link allowBehaviorChange}).
+   */
+  showBehaviorOnClick?: boolean;
 }
 
 /**
@@ -81,6 +86,9 @@ export interface NekoPetPublicProps {
  */
 export default defineComponent({
   name: "NekoPet",
+  emits: {
+    behaviorModeChange: (mode: BehaviorMode) => isBehaviorMode(mode),
+  },
   props: {
     speed: Number,
     fps: Number,
@@ -157,8 +165,14 @@ export default defineComponent({
     },
     /** Log placement and recreate steps to the console with prefix `[neko-vue]`. */
     debug: { type: Boolean, default: false },
+    /** Built-in label above the sprite after each click-to-cycle step. */
+    showBehaviorOnClick: { type: Boolean, default: false },
   },
-  setup(props, { expose }) {
+  setup(props, { expose, emit }) {
+    const notifyBehaviorModeChange = (mode: BehaviorMode): void => {
+      emit("behaviorModeChange", mode);
+    };
+
     const nekoOptions = computed(() => ({
       speed: props.speed,
       fps: props.fps,
@@ -176,6 +190,8 @@ export default defineComponent({
       mode: props.mode,
       restUntilFirstPetInteraction: props.restUntilFirstPetInteraction,
       debug: props.debug,
+      showBehaviorOnClick: props.showBehaviorOnClick,
+      onBehaviorModeChange: notifyBehaviorModeChange,
     }));
 
     const { instance } = useNeko(nekoOptions);
