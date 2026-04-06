@@ -6,11 +6,11 @@ Small Vue app to **see** the pet in the browser.
 
 **Vue Router** splits demos onto **separate routes** so only **one** neko instance is mounted at a time:
 
-| Route             | File                    | What it shows                                                                                                                                                                                                |
-| ----------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`/`**           | `DemoNekoPet.vue`       | **`<NekoPet />`** — corner spawn, rest-until-first-click, seven modes; **`ref` + exposed `instance`** and **`useNekoHud`** for the live panel.                                                               |
-| **`/composable`** | `DemoUseNekoAnchor.vue` | **`useNeko`** + **`anchorRef`** + **`useTemplateRef`**; live panel adds **`isReady`**, reduced-motion skip, and first-click gate.                                                                            |
-| **`/customize`**  | `DemoCustomize.vue`     | **Sandbox:** form for placement (corner / explicit / anchor), motion, behavior (incl. **`cursorStandoffPx`**, custom **`behaviorCycle`**), debug — **Apply** recreates the pet via **`useNeko`** + live HUD. |
+| Route             | File                    | What it shows                                                                                                                                                                                                    |
+| ----------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`/`**           | `DemoNekoPet.vue`       | **`<NekoPet />`** — corner spawn, rest-until-first-click, seven modes; **`show-behavior-on-click`** + **`@behavior-mode-change`**; **`ref` + exposed `instance`** and **`useNekoHud`** + last emit in the panel. |
+| **`/composable`** | `DemoUseNekoAnchor.vue` | **`useNeko`** + **`anchorRef`** + **`useTemplateRef`**; toggles for **`showBehaviorOnClick`** and optional **`onBehaviorModeChange`** logger; live panel + first-click gate / **`isReady`**.                     |
+| **`/customize`**  | `DemoCustomize.vue`     | **Sandbox:** same as before, plus **`showBehaviorOnClick`** and stable **`onBehaviorModeChange`** checkboxes; **NekoPet-like** preset enables both. **Apply** recreates via **`useNeko`** + live HUD.            |
 
 Shared UI: **`PlaygroundLiveStats.vue`** (presentation) and **`useNekoHud.ts`** (rAF polling of `NekoInstance`).
 
