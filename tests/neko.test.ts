@@ -5,7 +5,14 @@ import { __resetNekoLoaderForTests, loadNekoRuntime } from "../src/runtime/loadN
 import { cornerToStartXY } from "../src/placement/nekoPlacement.ts";
 import NekoPet from "../src/vue/NekoPet.ts";
 import { prefersReducedMotion } from "../src/utils/prefersReducedMotion.ts";
-import { BehaviorMode } from "../src/types/index.ts";
+import {
+  BEHAVIOR_MODE_LABELS,
+  BEHAVIOR_MODES_IN_ORDER,
+  BehaviorMode,
+  NEKOJS_SPRITE_SIZE,
+  behaviorModeEnumName,
+} from "../src/types/index.ts";
+import { readViewportBounds } from "../src/runtime/nekoViewport.ts";
 import { createNeko } from "../src/runtime/nekojsRuntime.ts";
 import { useNeko } from "../src/vue/useNeko.ts";
 
@@ -14,12 +21,22 @@ type NekoWithLayout = {
   y: number;
   homeX: number;
   homeY: number;
-  destroy(): void;
+  start(): void;
   stop(): void;
+  destroy(): void;
 };
 
 /** Vitest infers `mock.calls` as empty tuples; cast after asserting the mock ran. */
 type CreateNekoCallArgs = [options: Record<string, unknown>];
+
+/** Coalesced resize uses `requestAnimationFrame`; flush before asserting layout. */
+function flushAnimationFrames(): Promise<void> {
+  return new Promise((resolve) => {
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
 
 describe("loadNekoRuntime", () => {
   beforeEach(() => {
@@ -403,6 +420,62 @@ describe("useNeko", () => {
       wrapper.unmount();
     }
   });
+
+  test("restUntilFirstPetInteraction: after wake, showBehaviorOnClick hint appears on next pet mousedown", async () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 800,
+    });
+    vi.stubGlobal("innerHeight", 600);
+    window.createNeko = createNeko;
+
+    const anchor = ref<HTMLDivElement | null>(null);
+    const Child = defineComponent({
+      setup() {
+        useNeko(
+          computed(() => ({
+            anchorRef: anchor,
+            speed: 20,
+            behaviorMode: BehaviorMode.ChaseMouse,
+            restUntilFirstPetInteraction: true,
+            showBehaviorOnClick: true,
+            respectReducedMotion: false,
+          })),
+        );
+        return () =>
+          h("div", {
+            ref: anchor,
+            style: { width: "100px", height: "40px" },
+          });
+      },
+    });
+
+    const wrapper = mount(Child);
+    await vi.waitFor(() => {
+      expect(document.querySelector(".neko")).toBeTruthy();
+    });
+
+    document
+      .querySelector(".neko")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+
+    await flushAnimationFrames();
+    await nextTick();
+    await nextTick();
+
+    const petAfterWake = document.querySelector(".neko");
+    expect(petAfterWake).toBeTruthy();
+    petAfterWake!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+
+    await vi.waitFor(() => {
+      const hint = document.querySelector(".neko-behavior-hint");
+      expect(hint?.textContent).toBe(BEHAVIOR_MODE_LABELS[BehaviorMode.RunAwayFromMouse]);
+      expect(hint).toBeInstanceOf(HTMLElement);
+      expect((hint as HTMLElement).style.visibility).toBe("visible");
+    });
+
+    wrapper.unmount();
+  });
 });
 
 describe("NekoPet", () => {
@@ -435,12 +508,102 @@ describe("NekoPet", () => {
   });
 });
 
+describe("Neko behavior click notify", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("onBehaviorModeChange receives new mode after pet mousedown", () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 800,
+    });
+    vi.stubGlobal("innerHeight", 600);
+
+    const onBehaviorModeChange = vi.fn();
+    const neko = createNeko({
+      behaviorMode: BehaviorMode.StayStill,
+      allowBehaviorChange: true,
+      onBehaviorModeChange,
+    });
+
+    const el = document.querySelector(".neko");
+    expect(el).toBeTruthy();
+    el!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+
+    expect(onBehaviorModeChange).toHaveBeenCalledTimes(1);
+    expect(onBehaviorModeChange).toHaveBeenCalledWith(BehaviorMode.ReturnHomeAndStay);
+
+    neko.destroy();
+  });
+
+  test("showBehaviorOnClick renders hint then destroy removes it", () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 800,
+    });
+    vi.stubGlobal("innerHeight", 600);
+
+    const neko = createNeko({
+      behaviorMode: BehaviorMode.StayStill,
+      allowBehaviorChange: true,
+      showBehaviorOnClick: true,
+    });
+
+    document
+      .querySelector(".neko")!
+      .dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+
+    const hint = document.querySelector(".neko-behavior-hint");
+    expect(hint?.textContent).toBe(BEHAVIOR_MODE_LABELS[BehaviorMode.ReturnHomeAndStay]);
+
+    neko.destroy();
+    expect(document.querySelector(".neko-behavior-hint")).toBeNull();
+  });
+});
+
 describe("Neko resize", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  test("clamps position and home into the new viewport when the window shrinks", () => {
+  /** Layout viewport (not visualViewport): matches engine fallback in tests. */
+  function stubLayoutViewport(clientWidth: number, innerHeight: number): void {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: clientWidth,
+    });
+    vi.stubGlobal("innerHeight", innerHeight);
+  }
+
+  async function dispatchResize(): Promise<void> {
+    window.dispatchEvent(new Event("resize"));
+    await flushAnimationFrames();
+  }
+
+  /** Same clamp as {@link readViewportBounds} + engine placement clamp. */
+  function clampedHome(startX: number, startY: number): { hx: number; hy: number } {
+    const { boundsWidth: bw, boundsHeight: bh } = readViewportBounds(NEKOJS_SPRITE_SIZE);
+    const clamp = (v: number, max: number): number =>
+      max <= 0 ? 0 : Math.max(0, Math.min(max, Number.isFinite(v) ? v : 0));
+    return { hx: clamp(startX, bw), hy: clamp(startY, bh) };
+  }
+
+  function expectLayoutMatchesClampedHome(
+    neko: NekoWithLayout,
+    startX: number,
+    startY: number,
+  ): void {
+    const { hx, hy } = clampedHome(startX, startY);
+    expect(neko.homeX).toBe(hx);
+    expect(neko.homeY).toBe(hy);
+    expect(neko.x).toBe(hx);
+    expect(neko.y).toBe(hy);
+  }
+
+  const cornerPlacement = { startX: 980, startY: 550 };
+
+  test("clamps position and home into the new viewport when the window shrinks", async () => {
     Object.defineProperty(document.documentElement, "clientWidth", {
       configurable: true,
       value: 1000,
@@ -460,11 +623,182 @@ describe("Neko resize", () => {
     });
     vi.stubGlobal("innerHeight", 400);
     window.dispatchEvent(new Event("resize"));
+    await flushAnimationFrames();
 
     expect(neko.x).toBe(168);
     expect(neko.y).toBe(368);
     expect(neko.homeX).toBe(168);
     expect(neko.homeY).toBe(368);
+
+    neko.destroy();
+  });
+
+  test("restores placement when the viewport grows after a shrink (rest / stopped)", async () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    vi.stubGlobal("innerHeight", 600);
+
+    const neko = createNeko({
+      startX: 980,
+      startY: 550,
+      behaviorMode: BehaviorMode.StayStill,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 200,
+    });
+    vi.stubGlobal("innerHeight", 400);
+    window.dispatchEvent(new Event("resize"));
+    await flushAnimationFrames();
+
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 1000,
+    });
+    vi.stubGlobal("innerHeight", 600);
+    window.dispatchEvent(new Event("resize"));
+    await flushAnimationFrames();
+
+    expect(neko.homeX).toBe(968);
+    expect(neko.homeY).toBe(550);
+    expect(neko.x).toBe(968);
+    expect(neko.y).toBe(550);
+
+    neko.destroy();
+  });
+
+  describe("behavior matrix (placement snaps to clamped home on resize)", () => {
+    for (const mode of BEHAVIOR_MODES_IN_ORDER) {
+      const label = behaviorModeEnumName(mode);
+
+      test(`stopped — ${label}: shrink then full grow restores toward placement`, async () => {
+        stubLayoutViewport(1000, 600);
+        const neko = createNeko({
+          ...cornerPlacement,
+          behaviorMode: mode,
+          allowBehaviorChange: false,
+        }) as NekoWithLayout;
+        neko.stop();
+
+        stubLayoutViewport(200, 400);
+        await dispatchResize();
+        expectLayoutMatchesClampedHome(neko, cornerPlacement.startX, cornerPlacement.startY);
+
+        stubLayoutViewport(1000, 600);
+        await dispatchResize();
+        expect(neko.homeX).toBe(968);
+        expect(neko.homeY).toBe(550);
+        expect(neko.x).toBe(968);
+        expect(neko.y).toBe(550);
+
+        neko.destroy();
+      });
+
+      test(`running — ${label}: same shrink/grow as stopped (sprite follows clamped home)`, async () => {
+        stubLayoutViewport(1000, 600);
+        const neko = createNeko({
+          ...cornerPlacement,
+          behaviorMode: mode,
+          allowBehaviorChange: false,
+        }) as NekoWithLayout;
+
+        stubLayoutViewport(200, 400);
+        await dispatchResize();
+        expectLayoutMatchesClampedHome(neko, cornerPlacement.startX, cornerPlacement.startY);
+
+        stubLayoutViewport(1000, 600);
+        await dispatchResize();
+        expect(neko.x).toBe(968);
+        expect(neko.y).toBe(550);
+
+        neko.destroy();
+      });
+    }
+  });
+
+  test("interior placement unchanged when still inside bounds after shrink", async () => {
+    stubLayoutViewport(800, 600);
+    const neko = createNeko({
+      startX: 100,
+      startY: 80,
+      behaviorMode: BehaviorMode.StayStill,
+      allowBehaviorChange: false,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    stubLayoutViewport(400, 300);
+    await dispatchResize();
+    expect(neko.x).toBe(100);
+    expect(neko.y).toBe(80);
+
+    neko.destroy();
+  });
+
+  test("sequential shrinks keep snapping to tighter clamped home", async () => {
+    stubLayoutViewport(1000, 600);
+    const neko = createNeko({
+      ...cornerPlacement,
+      behaviorMode: BehaviorMode.ChaseMouse,
+      allowBehaviorChange: false,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    stubLayoutViewport(500, 500);
+    await dispatchResize();
+    expect(neko.x).toBe(468);
+    expect(neko.homeX).toBe(468);
+    expect(neko.y).toBe(468);
+    expect(neko.homeY).toBe(468);
+
+    stubLayoutViewport(200, 400);
+    await dispatchResize();
+    expect(neko.x).toBe(168);
+    expect(neko.y).toBe(368);
+
+    neko.destroy();
+  });
+
+  test("partial grow moves toward placement up to new bounds (not only full restore)", async () => {
+    stubLayoutViewport(1000, 600);
+    const neko = createNeko({
+      ...cornerPlacement,
+      behaviorMode: BehaviorMode.ReturnHomeAndStay,
+      allowBehaviorChange: false,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    stubLayoutViewport(200, 400);
+    await dispatchResize();
+    expect(neko.x).toBe(168);
+    expect(neko.y).toBe(368);
+
+    stubLayoutViewport(500, 500);
+    await dispatchResize();
+    expect(neko.x).toBe(468);
+    expect(neko.y).toBe(468);
+
+    neko.destroy();
+  });
+
+  test("minimal viewport clamps to maximum valid top-left", async () => {
+    stubLayoutViewport(1000, 600);
+    const neko = createNeko({
+      ...cornerPlacement,
+      behaviorMode: BehaviorMode.StayStill,
+      allowBehaviorChange: false,
+    }) as NekoWithLayout;
+    neko.stop();
+
+    stubLayoutViewport(48, 48);
+    await dispatchResize();
+    expect(neko.x).toBe(16);
+    expect(neko.y).toBe(16);
+    expect(neko.homeX).toBe(16);
+    expect(neko.homeY).toBe(16);
 
     neko.destroy();
   });
