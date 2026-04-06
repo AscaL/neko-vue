@@ -14,6 +14,13 @@ import { computed, reactive, ref, useTemplateRef } from "vue";
 import CustomizeLiveHud from "./CustomizeLiveHud.vue";
 import type { LiveStatLine } from "./PlaygroundLiveStats.vue";
 
+/** Stable for `useNeko` — never inline per render. */
+const lastBehaviorFromPlaygroundCallback = ref("—");
+
+function playgroundOnBehaviorModeChange(mode: BehaviorMode): void {
+  lastBehaviorFromPlaygroundCallback.value = formatBehaviorMode(mode);
+}
+
 type PlacementKind = "corner" | "explicit" | "anchor";
 type AnchorBindingKind = "ref" | "selector";
 type AllowBehavior = "omit" | "on" | "off";
@@ -42,6 +49,10 @@ interface FormState {
   allowBehavior: AllowBehavior;
   behaviorCycleCustom: boolean;
   behaviorCycle: BehaviorMode[];
+  /** Maps to `NekoOptions.showBehaviorOnClick`. */
+  showBehaviorOnClick: boolean;
+  /** Pass stable `onBehaviorModeChange` into `createNeko` (see README). */
+  trackBehaviorCallback: boolean;
 }
 
 const CORNERS: { value: NekoStartCorner; label: string }[] = [
@@ -126,6 +137,8 @@ function defaultForm(): FormState {
     allowBehavior: "omit",
     behaviorCycleCustom: false,
     behaviorCycle: [...DEFAULT_NEKO_BEHAVIOR_CYCLE],
+    showBehaviorOnClick: false,
+    trackBehaviorCallback: false,
   };
 }
 
@@ -143,11 +156,15 @@ function snapshot(): FormState {
 
 function applySettings(): void {
   applied.value = snapshot();
+  if (!applied.value.trackBehaviorCallback) {
+    lastBehaviorFromPlaygroundCallback.value = "—";
+  }
 }
 
 function resetForm(): void {
   Object.assign(draft, defaultForm());
   applied.value = snapshot();
+  lastBehaviorFromPlaygroundCallback.value = "—";
 }
 
 function preset(name: string): void {
@@ -158,6 +175,8 @@ function preset(name: string): void {
     d.restUntilFirstPet = true;
     d.followMode = "follow";
     d.behaviorMode = BehaviorMode.ChaseMouse;
+    d.showBehaviorOnClick = true;
+    d.trackBehaviorCallback = true;
   } else if (name === "anchor-like") {
     d.placement = "anchor";
     d.anchorBinding = "ref";
@@ -165,6 +184,8 @@ function preset(name: string): void {
     d.speed = 20;
     d.restUntilFirstPet = true;
     d.behaviorMode = BehaviorMode.ChaseMouse;
+    d.showBehaviorOnClick = true;
+    d.trackBehaviorCallback = true;
   } else if (name === "explicit-center") {
     d.placement = "explicit";
     d.startX = 200;
@@ -204,6 +225,13 @@ function buildOptions(state: FormState): UseNekoOptions {
 
   if (state.behaviorCycleCustom && state.behaviorCycle.length > 0) {
     o.behaviorCycle = [...state.behaviorCycle];
+  }
+
+  if (state.showBehaviorOnClick) {
+    o.showBehaviorOnClick = true;
+  }
+  if (state.trackBehaviorCallback) {
+    o.onBehaviorModeChange = playgroundOnBehaviorModeChange;
   }
 
   if (state.placement === "corner" && state.startCorner) {
@@ -281,6 +309,14 @@ function appliedOptionRows(state: FormState): LiveStatLine[] {
       value: formatBehaviorMode(state.behaviorMode),
     },
     { label: "allowBehaviorChange", value: effectiveAllowBehaviorLine(state) },
+    {
+      label: "showBehaviorOnClick",
+      value: state.showBehaviorOnClick ? "true" : "omit",
+    },
+    {
+      label: "onBehaviorModeChange",
+      value: state.trackBehaviorCallback ? "playground (stable fn)" : "omit",
+    },
     { label: "idleThreshold", value: effectiveIdleLine(state) },
     { label: "cursorStandoffPx", value: effectiveCursorStandoffLine(state) },
     { label: "behaviorCycle", value: behaviorCycleLine(state) },
@@ -305,6 +341,14 @@ const hudLines = computed((): LiveStatLine[] => [
         : "waiting"
       : "off",
   },
+  ...(applied.value.trackBehaviorCallback
+    ? [
+        {
+          label: "onBehaviorModeChange (last)",
+          value: lastBehaviorFromPlaygroundCallback.value,
+        },
+      ]
+    : []),
   ...(error.value ? [{ label: "error", value: error.value.message }] : []),
 ]);
 </script>
@@ -546,6 +590,24 @@ const hudLines = computed((): LiveStatLine[] => [
               longer advance the cycle (and the sprite stops acting like a button in the engine);
               change sticks until you <strong>Apply</strong>
               again or otherwise recreate the pet.
+            </p>
+            <label class="check">
+              <input v-model="draft.showBehaviorOnClick" type="checkbox" />
+              <span><code>showBehaviorOnClick</code></span>
+            </label>
+            <p class="opt-desc opt-desc--check">
+              When checked, sends <code>true</code>: short built-in label (class
+              <code>neko-behavior-hint</code>) after each click cycle step. Needs
+              <code>allowBehaviorChange</code> effectively true.
+            </p>
+            <label class="check">
+              <input v-model="draft.trackBehaviorCallback" type="checkbox" />
+              <span>Stable <code>onBehaviorModeChange</code> (playground logger)</span>
+            </label>
+            <p class="opt-desc opt-desc--check">
+              Uses one module-level function so identity stays stable. Uncheck and
+              <strong>Apply</strong> to omit the option; the live panel row clears. Toggling this or
+              <code>showBehaviorOnClick</code> changes the recreate fingerprint.
             </p>
             <label class="check">
               <input v-model="draft.behaviorCycleCustom" type="checkbox" />

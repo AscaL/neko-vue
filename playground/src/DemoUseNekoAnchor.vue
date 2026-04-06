@@ -1,11 +1,20 @@
 <script setup lang="ts">
-import { BehaviorMode, useNeko } from "../../src/index";
-import { computed, unref, useTemplateRef } from "vue";
+import { BehaviorMode, formatBehaviorMode, useNeko } from "../../src/index";
+import { computed, ref, unref, useTemplateRef } from "vue";
 import PlaygroundLiveStats from "./PlaygroundLiveStats.vue";
 import { useNekoHud } from "./useNekoHud";
 
 /** Vue 3.5+: `useTemplateRef` for the anchor. On Vue 3.4 use `ref<HTMLElement | null>(null)` + `ref="anchor"`. */
 const anchor = useTemplateRef<HTMLDivElement>("anchor");
+
+const lastCallbackMode = ref("—");
+const showBehaviorOnClick = ref(true);
+const useBehaviorCallback = ref(true);
+
+/** Stable identity — do not inline in `computed` or the pet would recreate every render. */
+function onBehaviorModeChange(mode: BehaviorMode): void {
+  lastCallbackMode.value = formatBehaviorMode(mode);
+}
 
 const { petInteractionAwake, instance, isReady, skippedForReducedMotion } = useNeko(
   computed(() => ({
@@ -16,19 +25,34 @@ const { petInteractionAwake, instance, isReady, skippedForReducedMotion } = useN
     behaviorMode: BehaviorMode.ChaseMouse,
     restUntilFirstPetInteraction: true,
     debug: import.meta.env.DEV,
+    showBehaviorOnClick: showBehaviorOnClick.value,
+    ...(useBehaviorCallback.value ? { onBehaviorModeChange } : {}),
   })),
 );
 
 const { hudBehavior, hudStartPosition, hudPosition } = useNekoHud(() => unref(instance));
 
-const extraLines = computed(() => [
-  { label: "isReady", value: isReady.value ? "yes" : "no" },
-  { label: "skipped (motion)", value: skippedForReducedMotion.value ? "yes" : "no" },
-  {
-    label: "first-click gate",
-    value: petInteractionAwake.value ? "awake" : "waiting",
-  },
-]);
+const extraLines = computed(() => {
+  const rows = [
+    { label: "isReady", value: isReady.value ? "yes" : "no" },
+    { label: "skipped (motion)", value: skippedForReducedMotion.value ? "yes" : "no" },
+    {
+      label: "first-click gate",
+      value: petInteractionAwake.value ? "awake" : "waiting",
+    },
+    {
+      label: "showBehaviorOnClick (option)",
+      value: showBehaviorOnClick.value ? "true" : "false",
+    },
+  ];
+  if (useBehaviorCallback.value) {
+    rows.push({
+      label: "onBehaviorModeChange (last)",
+      value: lastCallbackMode.value,
+    });
+  }
+  return rows;
+});
 </script>
 
 <template>
@@ -46,9 +70,22 @@ const extraLines = computed(() => [
       <strong>chases the pointer</strong> (<code>BehaviorMode.ChaseMouse</code> after wake). Move
       the cat, then keep <strong>clicking the cat</strong> until
       <strong>return home &amp; stay</strong> (last of seven) — it walks back to this box’s corner.
-      Only clicks change behavior; recreates from layout keep the current mode. The live panel shows
-      gate state and composable flags.
+      Only clicks change behavior; recreates from layout keep the current mode. The
+      <strong>first</strong> pointer-down only wakes follow (no cycle step, no built-in label).
+      <strong>After that</strong>, each click cycles modes and <code>showBehaviorOnClick</code> /
+      <code>onBehaviorModeChange</code> apply. Toggle the options below — turning the callback off
+      omits it (stable handler when re-enabled).
     </p>
+    <div class="demo-toggles" role="group" aria-label="Composable behavior UX options">
+      <label class="toggle">
+        <input v-model="showBehaviorOnClick" type="checkbox" />
+        <span>Built-in click label (<code>showBehaviorOnClick</code>)</span>
+      </label>
+      <label class="toggle">
+        <input v-model="useBehaviorCallback" type="checkbox" />
+        <span>Log <code>onBehaviorModeChange</code> in the panel</span>
+      </label>
+    </div>
     <div ref="anchor" class="anchor" aria-hidden="true">Spawn anchor (top-left of this box)</div>
     <PlaygroundLiveStats
       :behavior="hudBehavior"
@@ -88,5 +125,26 @@ const extraLines = computed(() => [
 }
 code {
   font-size: 0.95em;
+}
+.demo-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.65rem;
+  padding: 0.5rem 0.65rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: #334155;
+}
+.toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  cursor: pointer;
+}
+.toggle input {
+  margin-top: 0.15rem;
 }
 </style>

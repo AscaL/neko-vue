@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { NekoPet } from "../../src/index";
+import { BehaviorMode, formatBehaviorMode, NekoPet } from "../../src/index";
 import type { NekoInstance } from "../../src/types/index";
-import { useTemplateRef, unref, type Ref } from "vue";
+import { computed, ref, useTemplateRef, unref, type Ref } from "vue";
 import PlaygroundLiveStats from "./PlaygroundLiveStats.vue";
 import { useNekoHud } from "./useNekoHud";
 
@@ -11,6 +11,20 @@ const petRef = useTemplateRef<{ instance: Ref<NekoInstance | null> }>("pet");
 const { hudBehavior, hudStartPosition, hudPosition } = useNekoHud(() =>
   unref(petRef.value?.instance),
 );
+
+/** Last payload from {@link NekoPet}'s `behaviorModeChange` emit (same timing as `onBehaviorModeChange`). */
+const lastEmitLabel = ref("—");
+
+function onPetBehaviorModeChange(mode: BehaviorMode): void {
+  lastEmitLabel.value = formatBehaviorMode(mode);
+}
+
+const emitStatLines = computed(() => [
+  {
+    label: "@behavior-mode-change (last)",
+    value: lastEmitLabel.value,
+  },
+]);
 </script>
 
 <template>
@@ -24,7 +38,9 @@ const { hudBehavior, hudStartPosition, hudPosition } = useNekoHud(() =>
     <p class="hint">
       <strong>Try it:</strong> the cat starts frozen until you <strong>click it</strong> — that
       wakes chase. Further <strong>clicks on the cat</strong> cycle behavior (seven steps): chase →
-      run away → random → pace → ball chase → stay still → return home &amp; stay → … Changing
+      run away → random → pace → ball chase → stay still → return home &amp; stay → … A short
+      built-in label (<code>show-behavior-on-click</code>) appears above the sprite on each cycle
+      step; the live panel records the last <code>@behavior-mode-change</code> emit. Changing
       <code>behavior-mode</code> in code only affects the <em>first</em> create; after that, only
       clicks change mode. Here <strong>home</strong> is the bottom-right corner spawn.
     </p>
@@ -37,12 +53,15 @@ const { hudBehavior, hudStartPosition, hudPosition } = useNekoHud(() =>
       ref="pet"
       start-corner="bottom-right"
       rest-until-first-pet-interaction
+      show-behavior-on-click
       :debug="debugPlacement"
+      @behavior-mode-change="onPetBehaviorModeChange"
     />
     <PlaygroundLiveStats
       :behavior="hudBehavior"
       :start-position="hudStartPosition"
       :position="hudPosition"
+      :lines="emitStatLines"
     />
   </section>
 </template>
