@@ -4,11 +4,10 @@ All notable changes to this project will be documented in this file. See [commit
 
 ## [0.1.7](https://github.com/AscaL/neko-vue/compare/v0.1.6...v0.1.7) (2026-04-06)
 
-
 ### Features
 
-* add options for behavior tracking and display in Neko components ([43a72b0](https://github.com/AscaL/neko-vue/commit/43a72b007b6f9da81441cfb1955b4ad9a92a08ef))
-* implement NekoEngineMovement and viewport handling for enhanced pet behavior and movement logic ([2dd8484](https://github.com/AscaL/neko-vue/commit/2dd848413050e2e51bc7f6e215ed6c6f4bb05407))
+- add options for behavior tracking and display in Neko components ([43a72b0](https://github.com/AscaL/neko-vue/commit/43a72b007b6f9da81441cfb1955b4ad9a92a08ef))
+- implement NekoEngineMovement and viewport handling for enhanced pet behavior and movement logic ([2dd8484](https://github.com/AscaL/neko-vue/commit/2dd848413050e2e51bc7f6e215ed6c6f4bb05407))
 
 ## [0.1.6](https://github.com/AscaL/neko-vue/compare/v0.1.5...v0.1.6) (2026-04-05)
 
