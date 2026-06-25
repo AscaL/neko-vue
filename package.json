@@ -1,6 +1,6 @@
 {
   "name": "neko-vue",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Vue 3 library for a viewport-fixed Neko-style desktop pet: NekoPet component, useNeko composable, loadNekoRuntime, and TypeScript types. Ships the pet engine inside the package (dynamic import). Peer: vue ^3.4 || ^3.5.",
   "keywords": [
     "animation",
