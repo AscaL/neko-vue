@@ -560,6 +560,22 @@ describe("Neko behavior click notify", () => {
     neko.destroy();
     expect(document.querySelector(".neko-behavior-hint")).toBeNull();
   });
+
+  test("decorative pet is hidden from the accessibility tree", () => {
+    Object.defineProperty(document.documentElement, "clientWidth", {
+      configurable: true,
+      value: 800,
+    });
+    vi.stubGlobal("innerHeight", 600);
+
+    const neko = createNeko({ behaviorMode: BehaviorMode.StayStill });
+
+    const el = document.querySelector(".neko");
+    expect(el?.getAttribute("aria-hidden")).toBe("true");
+    expect(el?.querySelector("img")?.getAttribute("alt")).toBe("");
+
+    neko.destroy();
+  });
 });
 
 describe("Neko resize", () => {

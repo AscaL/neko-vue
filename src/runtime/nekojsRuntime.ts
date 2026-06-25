@@ -186,6 +186,11 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
   function init(): void {
     s.element = document.createElement("div");
     s.element.className = "neko";
+    // The pet is a decorative, mouse-only widget appended to <body> (outside any
+    // landmark and not keyboard-focusable). Hide the whole subtree from the
+    // accessibility tree so it doesn't trip axe `image-alt`/`region` checks or add
+    // noise for assistive tech.
+    s.element.setAttribute("aria-hidden", "true");
     s.element.style.cssText = `
       position: fixed;
       width: ${SPRITE_SIZE}px;
@@ -207,6 +212,7 @@ function buildNekoEngine(options: NekoOptions = {}): NekoEngineApi {
     `;
 
     const img = document.createElement("img");
+    img.alt = ""; // decorative sprite — empty alt + aria-hidden ancestor keep it out of the a11y tree
     img.style.cssText = `
       width: 100%;
       height: 100%;
